@@ -17,9 +17,9 @@
         <div class="gh-card mb-4">
             <div class="gh-card-body d-flex">
                 <input type="text" class="gh-input flex-grow" placeholder="Nhập Visit ID ở hệ thống cũ (VD: IP26000257)..." 
-                       @bind="searchVisitId" @bind:event="oninput" @onkeyup="HandleKeyUp" />
-                <button class="gh-btn gh-btn-secondary ml-2" @onclick="SearchVisit" disabled="@isLoading">
-                    @(isLoading ? "Đang truy vấn..." : "Tìm kiếm")
+                       @bind="searchVisitId" @bind:event="oninput" @onkeyup="HandleKeyUp" disabled="@(isLoading || isMigrating)" />
+                <button class="gh-btn gh-btn-secondary ml-2" @onclick="SearchVisit" disabled="@(isLoading || isMigrating)">
+                    @(isLoading ? "Đang xử lý..." : "Tìm kiếm")
                 </button>
             </div>
         </div>
@@ -29,6 +29,24 @@
         {
             <div class="gh-alert @(isSuccess ? "gh-alert-success" : "gh-alert-danger")">
                 @statusMessage
+            </div>
+        }
+
+        <!-- Khung Terminal Hiển Thị Log Chi Tiết -->
+        @if (executionLogs.Any())
+        {
+            <div class="gh-card mb-4" style="background-color: #0d1117;">
+                <div class="gh-card-header" style="padding: 8px 16px; font-size: 12px; font-family: monospace; color: var(--gh-text-muted); border-bottom: 1px solid var(--gh-border);">
+                    Terminal Output Logs
+                </div>
+                <div class="gh-card-body" style="padding: 12px 16px; max-height: 250px; overflow-y: auto; font-family: 'Courier New', Courier, monospace; font-size: 13px;">
+                    @foreach (var log in executionLogs)
+                    {
+                        <div style="margin-bottom: 4px; color: @(log.Contains("LỖI") || log.Contains("✖") || log.Contains("NGHIÊM TRỌNG") ? "var(--gh-danger-text)" : (log.Contains("✔") ? "var(--gh-success-text)" : "var(--gh-text)"));">
+                            @log
+                        </div>
+                    }
+                </div>
             </div>
         }
 
@@ -45,7 +63,7 @@
                         <div class="gh-grid-item"><strong>Họ Tên</strong> @currentData.TiepNhan.Hoten</div>
                         <div class="gh-grid-item"><strong>Năm sinh/Tuổi</strong> @currentData.TiepNhan.Namsinh (@currentData.TiepNhan.Tuoi tuổi)</div>
                         <div class="gh-grid-item"><strong>Giới tính</strong> @currentData.TiepNhan.Gioitinh</div>
-                        <div class="gh-grid-item"><strong>Lý do vào viện</strong> @(string.IsNullOrEmpty(currentData.PhieuChiDinh.Lydovaovien) ? "N/A" : currentData.PhieuChiDinh.Lydovaovien)</div>
+                        <div class="gh-grid-item"><strong>Bác sĩ khám</strong> @(string.IsNullOrEmpty(currentData.PhieuChiDinh.Hoten_Bacsi_Lambenhan) ? "N/A" : currentData.PhieuChiDinh.Hoten_Bacsi_Lambenhan)</div>
                         <div class="gh-grid-item"><strong>Khoa TN</strong> @currentData.TiepNhan.id_KhoaPhongTN</div>
                         <div class="gh-grid-item"><strong>Thời gian tiếp nhận</strong> @currentData.TiepNhan.Ngaygiotiepnhan?.ToString("dd/MM/yyyy HH:mm")</div>
                         <div class="gh-grid-item"><strong>Đối tượng</strong> @currentData.TiepNhan.id_DMDoituong</div>
@@ -53,7 +71,7 @@
                 </div>
                 <div class="gh-card-footer">
                     <button class="gh-btn gh-btn-primary" @onclick="ConfirmMigration" disabled="@isMigrating">
-                        @(isMigrating ? "Đang đồng bộ..." : "Đồng bộ qua HIS Mới")
+                        @(isMigrating ? "Hệ thống đang đồng bộ..." : "Tiến hành Đồng bộ qua HIS Mới")
                     </button>
                     <button class="gh-btn gh-btn-danger ml-2" @onclick="ClearForm" disabled="@isMigrating">Hủy</button>
                 </div>
@@ -90,6 +108,7 @@
     .gh-card-footer { padding: 16px; border-top: 1px solid var(--gh-border); background-color: var(--gh-card-bg); }
     .gh-input { background-color: var(--gh-bg); border: 1px solid var(--gh-border); color: var(--gh-text); border-radius: 6px; padding: 5px 12px; font-size: 14px; line-height: 20px; width: 100%; box-sizing: border-box;}
     .gh-input:focus { border-color: var(--gh-text-accent); outline: none; box-shadow: 0 0 0 3px rgba(88,166,255,0.3); }
+    .gh-input:disabled { opacity: 0.6; cursor: not-allowed; }
     .gh-btn { font-weight: 500; font-size: 14px; border-radius: 6px; padding: 5px 16px; cursor: pointer; border: 1px solid rgba(240,246,252,0.1); transition: 0.2s; line-height: 20px;}
     .gh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .gh-btn-primary { background-color: var(--gh-btn-primary-bg); color: #fff; }
@@ -120,6 +139,16 @@
     private bool isSuccess = false;
     private string statusMessage = "";
 
+    // Danh sách chứa các log thời gian thực
+    private List<string> executionLogs = new();
+
+    // Hàm nhận log từ Service và ép giao diện cập nhật ngay lập tức
+    private void AppendLog(string message)
+    {
+        executionLogs.Add($"[{DateTime.Now:HH:mm:ss.fff}] {message}");
+        InvokeAsync(StateHasChanged);
+    }
+
     private async Task HandleKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter") await SearchVisit();
@@ -132,22 +161,21 @@
         isLoading = true;
         statusMessage = "";
         currentData = null;
+        executionLogs.Clear();
         StateHasChanged();
 
         try
         {
-            currentData = await MigrationService.SearchVisitAsync(searchVisitId.Trim());
-            
-            if (currentData == null)
-            {
-                isSuccess = false;
-                statusMessage = $"Không tìm thấy thông tin cho Visit ID: {searchVisitId}";
-            }
+            // Truyền hàm AppendLog xuống tầng Service để lấy log real-time
+            currentData = await MigrationService.SearchVisitAsync(searchVisitId.Trim(), AppendLog);
+            isSuccess = true;
+            statusMessage = "Truy vấn thành công! Vui lòng xác nhận thông tin bên dưới.";
         }
         catch (Exception ex)
         {
             isSuccess = false;
-            statusMessage = $"Lỗi truy vấn DB ArcusAir: {ex.Message}";
+            statusMessage = $"Tra cứu thất bại: Xem log chi tiết bên dưới";
+            AppendLog($"✖ {ex.Message}");
         }
         finally
         {
@@ -162,9 +190,10 @@
 
         isMigrating = true;
         statusMessage = "";
+        executionLogs.Clear(); // Xóa log tìm kiếm cũ để hiện log insert
         StateHasChanged();
 
-        var result = await MigrationService.MigrateVisitAsync(currentData);
+        var result = await MigrationService.MigrateVisitAsync(currentData, AppendLog);
         
         isSuccess = result.IsSuccess;
         statusMessage = result.Message;
@@ -172,7 +201,6 @@
         if (isSuccess)
         {
             currentData = null;
-            searchVisitId = "";
         }
 
         isMigrating = false;
@@ -184,5 +212,6 @@
         currentData = null;
         statusMessage = "";
         searchVisitId = "";
+        executionLogs.Clear();
     }
 }
