@@ -185,7 +185,7 @@ namespace HisMigrationTool.Services
 	                N'' AS Apgar10phut,
 	                CAST (1 AS BIT) AS Vevoime,
 	                DATEADD(HOUR, 7, NB.createdat) AS Ngaygio,
-	                0 AS Magiaychungsinh,
+	                CAST(PARSENAME(NB.birthnumber, 4) AS INT) AS Magiaychungsinh,
 	                CAST (0 AS BIT) AS Conhananhbe,
 	                N'' AS id_Yta,
 	                N'' AS Hoten_Yta,
