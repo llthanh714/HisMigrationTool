@@ -19,7 +19,7 @@ namespace HisMigrationTool.Services
         {
             using var connection = new SqlConnection(_oldHisConn);
 
-            onProgress?.Invoke($"[1/6] Đang kết nối tới DB ArcusAir để tìm VisitID: {visitId}...");
+            onProgress?.Invoke($"[1/7] Đang kết nối tới DB ArcusAir để tìm VisitID: {visitId}...");
 
             string sql = @"
                 -- TRUY VẤN 1: Dữ liệu Tiếp nhận
@@ -158,32 +158,120 @@ namespace HisMigrationTool.Services
                 JOIN PhuongChauDW.dbo.FactPatientVisits AS dwpv ON pv.visitid = dwpv.VisitId AND dwpv.OrganizationCode = o.code
                 LEFT JOIN ArcusAirSql.dbo.__MappingDept AS mp ON dwpv.DepartmentName = mp.TenKhoaAA
                 WHERE pv.visitid = @VisitId AND o.code = 'PC02';
+
+                -- TRUY VẤN 6: Lấy dữ liệu Trẻ sơ sinh (CHỈ TRẢ VỀ DATA NẾU MÃ TIẾP NHẬN NÀY CÓ TRẺ SƠ SINH)
+                -- LƯU Ý: Vui lòng thay [Bang_ThongTin_TreSoSinh_Cua_ArcusAir] bằng bảng dữ liệu sinh thực tế của bạn
+                SELECT
+	                0 AS id_Tresosinh,
+	                0 AS id_Hosonoitru_Me,
+	                N'' AS Sonhapvien_Me,
+	                NB.babynumber AS Stt_Tatcatre,
+	                NB.firstname AS Hotenbe,
+	                RV_GD.valuedescription AS Gioitinh,
+	                N'Bình_thường' AS Tinhtrang,
+	                N'' AS Ditat,
+	                NB.birthweight * 1000 AS Cannang,
+	                NB.infantlength AS Cao,
+	                NB.headcircumference AS Vongdau,
+	                FORMAT(DATEPART(HOUR, DATEADD(HOUR, 7, NB.birthdatetime)), '00') AS Deluc_Gio,
+	                FORMAT(DATEPART(HOUR, DATEADD(MINUTE, 7, NB.birthdatetime)), '00') AS Deluc_Phut,
+	                CONVERT(NVARCHAR(24), DATEADD(MINUTE, 7, NB.birthdatetime), 103) AS Deluc_Ngay,
+	                CAST(1 AS BIT) AS Cohaumon,
+	                N'' AS Cuthetatbamsinh,
+	                N'' AS Tinhtrangtresosinhsaukhide,
+	                N'' AS Xulyvaketqua,
+	                N'' AS Apgar1phut,
+	                N'' AS Apgar5phut,
+	                N'' AS Apgar10phut,
+	                CAST (1 AS BIT) AS Vevoime,
+	                DATEADD(HOUR, 7, NB.createdat) AS Ngaygio,
+	                0 AS Magiaychungsinh,
+	                CAST (0 AS BIT) AS Conhananhbe,
+	                N'' AS id_Yta,
+	                N'' AS Hoten_Yta,
+	                N'' AS id_BSTruc,
+	                N'' AS Hoten_BSTruc,
+	                REPLACE(PNB.mrn, 'PC', 'PC-') AS id_Benhnhan_be,
+	                5 AS Quyenso,
+	                p.firstname AS Hotenme_NND,
+	                CAST (YEAR(p.dateofbirth) AS NVARCHAR (4)) AS Namsinh_Me,
+	                CONCAT_WS (', ', pa.address, pa.area, pa.state) AS Diachithuongtru,
+	                N'' AS SoCMND_Hochieu,
+	                N'' AS Dantoc,
+	                0 AS Solansinh,
+	                0 AS Soconhiensong,
+	                0 AS Socontronglansinhnay,
+	                N'' AS Dudinhdattenbe,
+	                N'' AS Id_Nhanviendode,
+	                N'' AS Hoten_Nhanviendode,
+	                N'2026' AS Nam,
+	                N'' AS Machucdanh,
+	                NULL AS Ngaycap_SoCMND_Hochieu,
+	                N'' AS Noicap_SoCMND_Hochieu,
+	                N'' AS Ghichu,
+	                REPLACE(p.mrn, 'PC', 'PC-') AS id_Benhnhan_Me,
+	                N'' AS CachSanh,
+	                0 AS id_TheodoiTuoithai,
+	                CAST (1 AS BIT) AS Dagui_SMS,
+	                0 AS Thai_Tuan,
+	                0 AS Thai_Ngay,
+	                N'' AS Hoten_Cha,
+	                N'' AS MasoBHXH_Me,
+	                N'' AS Thutruong_Donvi,
+	                0 AS id_Tiepnhan,
+	                NULL AS NgayGioIn,
+	                N'' AS Quatrinhmangthai,
+	                N'' AS Ma_The_Tam,
+	                N'' AS ChandoanVV,
+	                N'' AS LydoVV,
+	                CAST (0 AS BIT) AS CaplaiGCS,
+	                N'' AS TinhtrangSK
+                FROM
+                  ArcusAirSql.dbo.patients AS p
+                  JOIN ArcusAirSql.dbo.organisations AS o ON p.orguid = o.id
+                  JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
+                  JOIN ArcusAirSql.dbo.patients_address AS pa ON p.id = pa.patients_id
+                  JOIN ArcusAirSql.dbo.newborndetails AS NB ON NB.patientvisituid = pv.id
+                  JOIN ArcusAirSql.dbo.referencevalues AS RV_GD ON RV_GD.id = NB.genderuid
+                  JOIN ArcusAirSql.dbo.patients AS PNB ON NB.babypatientuid = PNB.id
+                WHERE
+                  pv.visitid = @VisitId
+                  AND o.code = 'PC02'; 
             ";
 
             using var multi = await connection.QueryMultipleAsync(sql, new { VisitId = visitId });
 
-            onProgress?.Invoke("[2/6] Đang lấy và xác thực thông tin Tiếp nhận...");
+            onProgress?.Invoke("[2/7] Đang lấy và xác thực thông tin Tiếp nhận...");
             var tiepNhanList = (await multi.ReadAsync<TiepNhanDto>()).ToList();
             if (tiepNhanList.Count == 0) throw new Exception($"Không tìm thấy dữ liệu Tiếp nhận cho VisitID '{visitId}'.");
             var tiepNhanData = tiepNhanList.First();
 
-            onProgress?.Invoke("[3/6] Đang lấy và xác thực thông tin Phiếu chỉ định vào viện...");
+            onProgress?.Invoke("[3/7] Đang lấy và xác thực thông tin Phiếu chỉ định vào viện...");
             var phieuChiDinhList = (await multi.ReadAsync<PhieuChiDinhVaoVienDto>()).ToList();
             if (phieuChiDinhList.Count == 0) throw new Exception($"Không tìm thấy dữ liệu Phiếu chỉ định vào viện cho VisitID '{visitId}'.");
             var phieuChiDinhData = phieuChiDinhList.First();
 
-            onProgress?.Invoke("[4/6] Đang lấy và xác thực thông tin Bệnh nhân tại khoa...");
+            onProgress?.Invoke("[4/7] Đang lấy và xác thực thông tin Bệnh nhân tại khoa...");
             var bnTaiKhoaList = (await multi.ReadAsync<BenhNhanTaiKhoaDto>()).ToList();
             if (bnTaiKhoaList.Count == 0) throw new Exception($"Không tìm thấy dữ liệu Bệnh nhân tại khoa cho VisitID '{visitId}'.");
             var bnTaiKhoaData = bnTaiKhoaList.First();
 
-            onProgress?.Invoke("[5/6] Đang lấy và xác thực thông tin Bệnh án ngoại trú...");
+            onProgress?.Invoke("[5/7] Đang lấy và xác thực thông tin Bệnh án ngoại trú...");
             var baNgoaiTruList = (await multi.ReadAsync<BenhAnNgoaiTruDto>()).ToList();
             var baNgoaiTruData = baNgoaiTruList.FirstOrDefault() ?? new BenhAnNgoaiTruDto();
 
-            onProgress?.Invoke("[6/6] Đang lấy và xác thực thông tin Hồ sơ nội trú...");
+            onProgress?.Invoke("[6/7] Đang lấy và xác thực thông tin Hồ sơ nội trú...");
             var hsNoiTruList = (await multi.ReadAsync<HoSoNoiTruDto>()).ToList();
             var hsNoiTruData = hsNoiTruList.FirstOrDefault() ?? new HoSoNoiTruDto();
+
+            onProgress?.Invoke("[7/7] Kiểm tra hồ sơ Trẻ sơ sinh đi kèm...");
+            // Nhờ tính chất của INNER JOIN ở trên, nếu không có trẻ con, list này sẽ tự động Count = 0
+            var treSoSinhList = (await multi.ReadAsync<TreSoSinhDto>()).ToList();
+
+            if (treSoSinhList.Count != 0)
+                onProgress?.Invoke($"   -> Phát hiện {treSoSinhList.Count} trẻ sơ sinh trong ca này.");
+            else
+                onProgress?.Invoke($"   -> Ca này không có trẻ sơ sinh đi kèm.");
 
             onProgress?.Invoke("✔ Hoàn tất quá trình lấy và xác thực dữ liệu từ HIS Cũ.");
 
@@ -193,7 +281,8 @@ namespace HisMigrationTool.Services
                 PhieuChiDinh = phieuChiDinhData,
                 BenhNhanTaiKhoa = bnTaiKhoaData,
                 BenhAnNgoaiTru = baNgoaiTruData,
-                HoSoNoiTru = hsNoiTruData
+                HoSoNoiTru = hsNoiTruData,
+                DanhSachTreSoSinh = treSoSinhList
             };
         }
 
@@ -225,7 +314,6 @@ namespace HisMigrationTool.Services
                 string warningMsg = $"Bệnh nhân có Mã BN: {data.TiepNhan.id_Benhnhan} và Số nhập viện: {data.TiepNhan.Sonhapvien} đã được đồng bộ trước đó. Giao dịch bị hủy bỏ để tránh trùng lặp dữ liệu!";
                 onProgress?.Invoke($"⚠ CẢNH BÁO: {warningMsg}");
 
-                // Trả về false để hiển thị Alert màu đỏ trên giao diện
                 return new MigrationResult { IsSuccess = false, Message = warningMsg };
             }
             // =========================================================================
@@ -397,15 +485,53 @@ namespace HisMigrationTool.Services
                 {
                     onProgress?.Invoke($">> Cập nhật ngược ID_Hosonoitru ({newHoSoNoiTruId}) cho bảng Tiếp nhận và Bệnh án ngoại trú...");
 
-                    // 8.1 Cập nhật bảng BV_Tiepnhan
                     string sqlUpdateTiepNhan = "UPDATE BV_Tiepnhan SET id_Hosonoitru = @id_Hosonoitru WHERE id_Tiepnhan = @id_Tiepnhan;";
                     await connection.ExecuteAsync(sqlUpdateTiepNhan, new { id_Hosonoitru = newHoSoNoiTruId, id_Tiepnhan = newTiepNhanId }, transaction);
 
-                    // 8.2 Cập nhật bảng BV_BenhAn_Ngoaitru (chỉ cập nhật nếu đã insert ở bước 6)
                     if (!string.IsNullOrEmpty(data.BenhAnNgoaiTru.id_Benhnhan))
                     {
                         string sqlUpdateBaNgoaiTru = "UPDATE BV_BenhAn_Ngoaitru SET id_Hosonoitru = @id_Hosonoitru WHERE id_Tiepnhan = @id_Tiepnhan;";
                         await connection.ExecuteAsync(sqlUpdateBaNgoaiTru, new { id_Hosonoitru = newHoSoNoiTruId, id_Tiepnhan = newTiepNhanId }, transaction);
+                    }
+                }
+
+                // =========================================================================
+                // BƯỚC 9: INSERT TRẺ SƠ SINH (BV_Tresosinh) - CÓ KIỂM TRA ĐIỀU KIỆN
+                // =========================================================================
+                // CHỈ khi câu Query số 6 trả về dữ liệu (DanhSachTreSoSinh.Any() == true), đoạn code dưới đây mới chạy
+                if (data.DanhSachTreSoSinh != null && data.DanhSachTreSoSinh.Count != 0)
+                {
+                    onProgress?.Invoke($">> Đang cập nhật {data.DanhSachTreSoSinh.Count} thông tin Trẻ sơ sinh vào hệ thống...");
+                    string sqlInsertTreSoSinh = @"
+                        INSERT INTO BV_Tresosinh (
+                            id_Hosonoitru_Me, Sonhapvien_Me, Stt_Tatcatre, Hotenbe, Gioitinh, Tinhtrang, Ditat, Cannang, Cao, Vongdau, 
+                            Deluc_Gio, Deluc_Phut, Deluc_Ngay, Cohaumon, Cuthetatbamsinh, Tinhtrangtresosinhsaukhide, Xulyvaketqua, 
+                            Apgar1phut, Apgar5phut, Apgar10phut, Vevoime, Ngaygio, Magiaychungsinh, Conhananhbe, id_Yta, Hoten_Yta, 
+                            id_BSTruc, Hoten_BSTruc, id_Benhnhan_be, Quyenso, Hotenme_NND, Namsinh_Me, Diachithuongtru, SoCMND_Hochieu, 
+                            Dantoc, Solansinh, Soconhiensong, Socontronglansinhnay, Dudinhdattenbe, Id_Nhanviendode, Hoten_Nhanviendode, 
+                            Nam, Machucdanh, Ngaycap_SoCMND_Hochieu, Noicap_SoCMND_Hochieu, Ghichu, id_Benhnhan_Me, CachSanh, id_TheodoiTuoithai, 
+                            Dagui_SMS, Thai_Tuan, Thai_Ngay, Hoten_Cha, MasoBHXH_Me, Thutruong_Donvi, id_Tiepnhan, NgayGioIn, Quatrinhmangthai, 
+                            Ma_The_Tam, ChandoanVV, LydoVV, CaplaiGCS, TinhtrangSK
+                        ) VALUES (
+                            @id_Hosonoitru_Me, @Sonhapvien_Me, @Stt_Tatcatre, @Hotenbe, @Gioitinh, @Tinhtrang, @Ditat, @Cannang, @Cao, @Vongdau, 
+                            @Deluc_Gio, @Deluc_Phut, @Deluc_Ngay, @Cohaumon, @Cuthetatbamsinh, @Tinhtrangtresosinhsaukhide, @Xulyvaketqua, 
+                            @Apgar1phut, @Apgar5phut, @Apgar10phut, @Vevoime, @Ngaygio, @Magiaychungsinh, @Conhananhbe, @id_Yta, @Hoten_Yta, 
+                            @id_BSTruc, @Hoten_BSTruc, @id_Benhnhan_be, @Quyenso, @Hotenme_NND, @Namsinh_Me, @Diachithuongtru, @SoCMND_Hochieu, 
+                            @Dantoc, @Solansinh, @Soconhiensong, @Socontronglansinhnay, @Dudinhdattenbe, @Id_Nhanviendode, @Hoten_Nhanviendode, 
+                            @Nam, @Machucdanh, @Ngaycap_SoCMND_Hochieu, @Noicap_SoCMND_Hochieu, @Ghichu, @id_Benhnhan_Me, @CachSanh, @id_TheodoiTuoithai, 
+                            @Dagui_SMS, @Thai_Tuan, @Thai_Ngay, @Hoten_Cha, @MasoBHXH_Me, @Thutruong_Donvi, @id_Tiepnhan, @NgayGioIn, @Quatrinhmangthai, 
+                            @Ma_The_Tam, @ChandoanVV, @LydoVV, @CaplaiGCS, @TinhtrangSK
+                        )";
+
+                    foreach (var be in data.DanhSachTreSoSinh)
+                    {
+                        // Truyền mã tiếp nhận và hồ sơ nội trú của mẹ qua cho trẻ sơ sinh
+                        be.id_Tiepnhan = newTiepNhanId;
+                        be.id_Hosonoitru_Me = newHoSoNoiTruId > 0 ? newHoSoNoiTruId : null;
+                        be.Sonhapvien_Me = data.TiepNhan.Sonhapvien;
+                        be.id_Benhnhan_Me = data.TiepNhan.id_Benhnhan;
+
+                        await connection.ExecuteAsync(sqlInsertTreSoSinh, be, transaction);
                     }
                 }
 

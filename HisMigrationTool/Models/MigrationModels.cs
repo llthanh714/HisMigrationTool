@@ -8,6 +8,7 @@
         public BenhNhanTaiKhoaDto BenhNhanTaiKhoa { get; set; } = new();
         public BenhAnNgoaiTruDto BenhAnNgoaiTru { get; set; } = new();
         public HoSoNoiTruDto HoSoNoiTru { get; set; } = new();
+        public List<TreSoSinhDto> DanhSachTreSoSinh { get; set; } = new();
     }
 
     public class TiepNhanDto
@@ -333,6 +334,74 @@
         public string? id_NVKhoaXuly { get; set; }
         public bool? Danhan_HSBA { get; set; }
         public DateTime? Thoigiannhan_HSBA { get; set; }
+    }
+
+    public class TreSoSinhDto
+    {
+        public int id_Tresosinh { get; set; }
+        public int? id_Hosonoitru_Me { get; set; }
+        public string? Sonhapvien_Me { get; set; }
+        public int? Stt_Tatcatre { get; set; }
+        public string? Hotenbe { get; set; }
+        public string? Gioitinh { get; set; }
+        public string? Tinhtrang { get; set; }
+        public string? Ditat { get; set; }
+        public string? Cannang { get; set; }
+        public string? Cao { get; set; }
+        public string? Vongdau { get; set; }
+        public string? Deluc_Gio { get; set; }
+        public string? Deluc_Phut { get; set; }
+        public string? Deluc_Ngay { get; set; }
+        public bool? Cohaumon { get; set; }
+        public string? Cuthetatbamsinh { get; set; }
+        public string? Tinhtrangtresosinhsaukhide { get; set; }
+        public string? Xulyvaketqua { get; set; }
+        public string? Apgar1phut { get; set; }
+        public string? Apgar5phut { get; set; }
+        public string? Apgar10phut { get; set; }
+        public bool? Vevoime { get; set; }
+        public DateTime? Ngaygio { get; set; }
+        public int? Magiaychungsinh { get; set; }
+        public bool? Conhananhbe { get; set; }
+        public string? id_Yta { get; set; }
+        public string? Hoten_Yta { get; set; }
+        public string? id_BSTruc { get; set; }
+        public string? Hoten_BSTruc { get; set; }
+        public string? id_Benhnhan_be { get; set; }
+        public int? Quyenso { get; set; }
+        public string? Hotenme_NND { get; set; }
+        public string? Namsinh_Me { get; set; }
+        public string? Diachithuongtru { get; set; }
+        public string? SoCMND_Hochieu { get; set; }
+        public string? Dantoc { get; set; }
+        public int? Solansinh { get; set; }
+        public int? Soconhiensong { get; set; }
+        public int? Socontronglansinhnay { get; set; }
+        public string? Dudinhdattenbe { get; set; }
+        public string? Id_Nhanviendode { get; set; }
+        public string? Hoten_Nhanviendode { get; set; }
+        public string? Nam { get; set; }
+        public string? Machucdanh { get; set; }
+        public DateTime? Ngaycap_SoCMND_Hochieu { get; set; }
+        public string? Noicap_SoCMND_Hochieu { get; set; }
+        public string? Ghichu { get; set; }
+        public string? id_Benhnhan_Me { get; set; }
+        public string? CachSanh { get; set; }
+        public int? id_TheodoiTuoithai { get; set; }
+        public bool? Dagui_SMS { get; set; }
+        public int? Thai_Tuan { get; set; }
+        public int? Thai_Ngay { get; set; }
+        public string? Hoten_Cha { get; set; }
+        public string? MasoBHXH_Me { get; set; }
+        public string? Thutruong_Donvi { get; set; }
+        public int? id_Tiepnhan { get; set; }
+        public DateTime? NgayGioIn { get; set; }
+        public string? Quatrinhmangthai { get; set; }
+        public string? Ma_The_Tam { get; set; }
+        public string? ChandoanVV { get; set; }
+        public string? LydoVV { get; set; }
+        public bool? CaplaiGCS { get; set; }
+        public string? TinhtrangSK { get; set; }
     }
 
     public class MigrationResult
