@@ -1,9 +1,6 @@
-﻿using System;
-using System.Threading.Tasks;
-using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
-using Dapper;
+﻿using Dapper;
 using HisMigrationTool.Models;
+using Microsoft.Data.SqlClient;
 
 namespace HisMigrationTool.Services
 {
@@ -22,13 +19,12 @@ namespace HisMigrationTool.Services
         {
             using var connection = new SqlConnection(_oldHisConn);
 
-            // Bỏ FOR JSON PATH, trả về tập kết quả dạng cột (columnar) bình thường
             string sql = @"
                 SELECT
                     0 AS id_Tiepnhan,
                     N'BHYT' AS id_DMDoituong,
                     N'PC-00750' AS id_Nhanvien,
-                    p.mrn AS id_Benhnhan,
+                    REPLACE(p.mrn, 'PC', 'PC-') AS id_Benhnhan,
                     p.firstname AS Hoten,
                     REVERSE(LEFT(REVERSE(p.firstname), CHARINDEX(' ', REVERSE(p.firstname) + ' ') - 1)) AS Ten,
                     CONVERT(VARCHAR(24), p.dateofbirth, 103) AS Ngaythangnamsinh,
@@ -83,7 +79,6 @@ namespace HisMigrationTool.Services
                     pv.visitid = @VisitId
                     AND o.code = 'PC02'";
 
-            // Dapper sẽ tự động map các cột trả về vào các Property của class TiepNhanDto
             return await connection.QueryFirstOrDefaultAsync<TiepNhanDto>(sql, new { VisitId = visitId });
         }
 
@@ -95,9 +90,8 @@ namespace HisMigrationTool.Services
 
             try
             {
-                // Dùng Dapper truyền object 'data' trực tiếp. 
-                // Dapper tự động map các biến @TenBien với Property tương ứng trong TiepNhanDto
-                string sqlInsert = @"
+                // BƯỚC 1: Insert vào bảng BV_Tiepnhan và lấy ra ID tự tăng
+                string sqlInsertTiepNhan = @"
                     INSERT INTO BV_Tiepnhan (
                         id_DMDoituong, id_Nhanvien, id_Benhnhan, Hoten, Ten, Ngaythangnamsinh, Namsinh, 
                         Gioitinh, Diachidaydu, Phanloaikham, Trangthai, Dathuphi, id_Quaytiepnhan, 
@@ -120,22 +114,48 @@ namespace HisMigrationTool.Services
                     );
                     SELECT CAST(SCOPE_IDENTITY() as int);";
 
-                // Thực thi câu lệnh Insert và lấy về ID tự tăng (id_Tiepnhan)
-                int newId = await connection.QuerySingleAsync<int>(sqlInsert, data, transaction);
+                int newTiepNhanId = await connection.QuerySingleAsync<int>(sqlInsertTiepNhan, data, transaction);
 
-                // Nếu có các bảng khác cần insert kèm (VD: BV_ChiDinh, BV_KhamBenh...), 
-                // bạn có thể lấy `newId` này để làm khóa ngoại truyền tiếp vào các câu Insert phía dưới.
-                // data.id_Tiepnhan = newId;
 
+                // BƯỚC 2: Insert vào bảng BV_Tiepnhan_Diachi với newTiepNhanId vừa nhận được.
+                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
+                string sqlInsertDiaChi = @"
+                    INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan) 
+                    VALUES (@id_Tiepnhan);";
+
+                await connection.ExecuteAsync(sqlInsertDiaChi, new { id_Tiepnhan = newTiepNhanId }, transaction);
+
+                // BƯỚC 3: Insert vào bảng BV_Tiepnhan_Luutru với newTiepNhanId vừa nhận được.
+                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
+                string sqlInsertLuuTru = @"
+                    INSERT INTO BV_Tiepnhan_Luutru (id_Tiepnhan) 
+                    VALUES (@id_Tiepnhan);";
+
+                await connection.ExecuteAsync(sqlInsertLuuTru, new { id_Tiepnhan = newTiepNhanId }, transaction);
+
+                // BƯỚC 4: Insert vào bảng BV_Tiepnhan_Thuoctinh với newTiepNhanId vừa nhận được.
+                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
+                string sqlInsertThuocTinh = @"
+                    INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan) 
+                    VALUES (@id_Tiepnhan);";
+
+                await connection.ExecuteAsync(sqlInsertThuocTinh, new { id_Tiepnhan = newTiepNhanId }, transaction);
+
+
+                // Nếu muốn insert thêm các bảng khác (BV_BenhAn, BV_KhamBenh...), 
+                // bạn chỉ cần copy Bước 2, đổi tên bảng, đổi câu lệnh SQL và tái sử dụng `newTiepNhanId` tại đây.
+
+                // Commit tất cả giao dịch nếu mọi thứ thành công
                 transaction.Commit();
                 return new MigrationResult
                 {
                     IsSuccess = true,
-                    Message = $"Đồng bộ thành công! Tạo Lượt tiếp nhận với ID mới: {newId}"
+                    Message = $"Đồng bộ thành công! Lượt tiếp nhận: {newTiepNhanId}"
                 };
             }
             catch (Exception ex)
             {
+                // Hủy toàn bộ thay đổi (gồm cả insert bảng 1 và bảng 2) nếu có bất kỳ lỗi nào xảy ra
                 transaction.Rollback();
                 return new MigrationResult
                 {

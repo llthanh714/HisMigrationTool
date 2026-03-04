@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace HisMigrationTool.Models
+﻿namespace HisMigrationTool.Models
 {
     // Đối tượng map trực tiếp với các cột từ câu lệnh SELECT
     public class TiepNhanDto
