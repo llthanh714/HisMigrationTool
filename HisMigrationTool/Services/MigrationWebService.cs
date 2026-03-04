@@ -77,7 +77,10 @@ namespace HisMigrationTool.Services
                     JOIN ArcusAirSql.dbo.patients_address AS pa ON p.id = pa.patients_id
                     JOIN ArcusAirSql.dbo.patients_contact AS pc ON p.id = pc.patients_id
                     JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
-                WHERE pv.visitid = @VisitId AND o.code = 'PC02';
+                    JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
+                WHERE
+                    pv.visitid = @VisitId
+                    AND o.code = 'PC02';
 
                 -- TRUY VẤN 2: Dữ liệu Phiếu chỉ định vào viện
                 -- Lưu ý: Bạn cần update lại các JOIN để lấy đúng cột bệnh án/lâm sàng ở DB cũ
@@ -108,8 +111,8 @@ namespace HisMigrationTool.Services
                     N'' AS KQ_Canlamsang,
                     N'' AS Daxuly,
                     N'' AS Chuy,
-                    N'' AS Chovaodieutritaikhoa, -- Bổ sung
-                    N'' AS id_Khoadieutri, -- Bổ sung
+                    mp.TenKhoaHIS AS Chovaodieutritaikhoa, -- Bổ sung
+                    mp.MaKhoaHIS AS id_Khoadieutri, -- Bổ sung
                     N'' AS ICD_Chandoannoichuyenden,
                     N'' AS Chandoannoichuyenden,
                     N'' AS ICD_ChandoanKKB_CC,
@@ -130,7 +133,11 @@ namespace HisMigrationTool.Services
                     JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
                     JOIN ArcusAirSql.dbo.patientvisits_visitcareproviders AS prc ON prc.patientvisits_id = pv.id AND prc.isprimarycareprovider = 1
                     JOIN ArcusAirSql.dbo.users AS prcu ON prc.careprovideruid = prcu.id
-                WHERE pv.visitid = @VisitId AND o.code = 'PC02';
+                    JOIN PhuongChauDW.dbo.FactPatientVisits AS dwpv ON pv.visitid = dwpv.VisitId AND dwpv.OrganizationCode = o.code
+                    JOIN ArcusAirSql.dbo.__MappingDept AS mp ON dwpv.DepartmentName = mp.TenKhoaAA
+                WHERE
+                    pv.visitid = @VisitId
+                    AND o.code = 'PC02';
             ";
 
             // Sử dụng QueryMultipleAsync để đọc cùng lúc nhiều bảng trả về
@@ -221,6 +228,17 @@ namespace HisMigrationTool.Services
                 // ==========================================
                 // Cập nhật id_Tiepnhan khóa ngoại cho Phiếu chỉ định
                 data.PhieuChiDinh.id_Tiepnhan = newTiepNhanId;
+
+                if (data.PhieuChiDinh.Ngaygio is DateTime dt)
+                {
+                    // Format using the actual DateTime values
+                    data.PhieuChiDinh.Ngaygiodaydu = $"Vào lúc {dt.Hour} giờ {dt.Minute} phút, ngày {dt:dd} tháng {dt:MM} năm {dt:yyyy}";
+                }
+                else
+                {
+                    // Fallback when Ngaygio is null
+                    data.PhieuChiDinh.Ngaygiodaydu = string.Empty;
+                }
 
                 string sqlInsertPhieu = @"
                     INSERT INTO BV_Phieuchidinhvaovien (
