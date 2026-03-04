@@ -14,94 +14,80 @@ namespace HisMigrationTool.Services
 
         public MigrationWebService(IConfiguration config)
         {
-            // Lấy chuỗi kết nối từ appsettings.json
-            _oldHisConn = config.GetConnectionString("OldHis");
-            _newHisConn = config.GetConnectionString("NewHis");
+            _oldHisConn = config.GetConnectionString("OldHis") ?? "";
+            _newHisConn = config.GetConnectionString("NewHis") ?? "";
         }
 
-        public async Task<PatientMigrationDto> SearchPatientAsync(string patientCode)
+        public async Task<TiepNhanDto?> SearchVisitAsync(string visitId)
         {
             using var connection = new SqlConnection(_oldHisConn);
 
-            // Query lấy thông tin lượt khám mới nhất của bệnh nhân
+            // Bỏ FOR JSON PATH, trả về tập kết quả dạng cột (columnar) bình thường
             string sql = @"
                 SELECT
-                    p.id AS PatientUid,
-                    p.mrn AS MRN,
-                    p.firstname AS FullName,
-                    p.dateofbirth AS DateOfBirth,
-                    rv_gender.valuedescription AS Gender,
-                    p.nationalid AS NationalID,
-                    rv_nationality.valuedescription AS Nationality,
-                    rv_race.valuedescription AS Race,
-                    rv_occupation.valuedescription AS Occupation,
-                    rv_bloodgroup.valuedescription AS BloodGroup,
-                    rv_rhfactor.valuedescription AS RhFactor,
-                    rv_religion.valuedescription AS Religion,
-                    p.maritalstatusuid AS MaritalStatus,
-                    rv_patienttype.valuedescription AS PatientType,
-                    p.isvip AS IsVIP,
-                    p.registereddate AS RegisteredDate,
-                    p.ismcreg AS IsMCReg,
-                    p.passportno AS PassportNo,
-                    o.name AS OrganisationName,
-                    o.code AS OrgCode,
-                    MIN(pa.address) AS Address,
-                    MIN(pa.id) AS AreaId,
-                    MIN(pa.area) AS Area,
-                    MIN(pa.city) AS City,
-                    MIN(pa.state) AS State,
-                    MIN(pa.country) AS Country, 
-                    MIN(pa.zipcode) AS ZipCode,
-                    MIN(pc.mobilephone) AS MobilePhone,
-                    MIN(pc.emailid) AS EmailID,
-                    MIN(pc.homephone) AS HomePhone,
-                    MAX(p.modifiedat) AS ModifiedAt
+                    0 AS id_Tiepnhan,
+                    N'BHYT' AS id_DMDoituong,
+                    N'PC-00750' AS id_Nhanvien,
+                    p.mrn AS id_Benhnhan,
+                    p.firstname AS Hoten,
+                    REVERSE(LEFT(REVERSE(p.firstname), CHARINDEX(' ', REVERSE(p.firstname) + ' ') - 1)) AS Ten,
+                    CONVERT(VARCHAR(24), p.dateofbirth, 103) AS Ngaythangnamsinh,
+                    YEAR(p.dateofbirth) AS Namsinh,
+                    rv_gender.valuedescription AS Gioitinh,
+                    CONCAT_WS(', ', pa.address, pa.area, pa.state) AS Diachidaydu,
+                    N'Bình_thường' AS Phanloaikham,
+                    N'Đã_khám' AS Trangthai,
+                    CAST(0 AS BIT) AS Dathuphi,
+                    N'' AS id_Quaytiepnhan, 
+                    CAST(1 AS BIT) AS Noitru,
+                    0 AS id_Hosonoitru,
+                    CAST(0 AS BIT) AS Ngoaitru,
+                    N'' AS Sonhapvien,
+                    DATEADD(HOUR, 7, pv.createdat) AS Ngaygiotiepnhan,
+                    0 AS id_Voucher,
+                    N'' AS id_TKTamung,
+                    CAST(0 AS BIT) AS Tamung,
+                    CAST(0 AS BIT) AS DuyetBHYT,
+                    CAST(1 AS BIT) AS Tiepnhantunoitru,
+                    N'' AS Lydomienphi,
+                    CAST(0 AS BIT) AS Thuephong,
+                    CAST(0 AS BIT) AS BNThammy,
+                    0 AS id_benhnhanTK,
+                    0 AS id_SttBenhnhanBD,
+                    0 AS Songaydieutri_ngoaitru,
+                    (2026 - YEAR(p.dateofbirth)) AS Tuoi,
+                    pc.mobilephone AS Dienthoai,
+                    CAST(0 AS BIT) AS KoKiemtraGiamdinh,
+                    0 AS id_DMGoi,
+                    N'02' AS id_ChiNhanh,
+                    NULL AS NgaygioThu,
+                    N'' AS Mathe,
+                    CAST(0 AS BIT) AS Yeucau_BS,
+                    CAST(0 AS BIT) AS SudungBHBL,
+                    0 AS Khuvuc,
+                    CAST(0 AS BIT) AS Xuatvien,
+                    N'' AS XV_Trangthai,
+                    CONCAT_WS(', ', pa.address, pa.area, pa.state) AS Diachidaydu_Noitru,
+                    N'NT_CAPCUU' AS id_KhoaPhongTN,
+                    CAST(0 AS BIT) AS VIP,
+                    CAST(0 AS BIT) AS DaCheckin,
+                    CAST(1 AS BIT) AS Checkin_Noitru
                 FROM
                     ArcusAirSql.dbo.patients AS p
-                    LEFT JOIN ArcusAirSql.dbo.organisations AS o ON p.orguid = o.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_gender ON p.genderuid = rv_gender.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_nationality ON p.nationalityuid = rv_nationality.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_race ON p.raceuid = rv_race.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_occupation ON p.occupationuid = rv_occupation.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_bloodgroup ON p.bloodgroupuid = rv_bloodgroup.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_rhfactor ON p.rhfactoruid = rv_rhfactor.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_religion ON p.religionuid = rv_religion.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_maritalstatus ON p.maritalstatusuid = rv_maritalstatus.id
-                    LEFT JOIN ArcusAirSql.dbo.referencevalues AS rv_patienttype ON p.patienttypeuid = rv_patienttype.id
-                    LEFT JOIN ArcusAirSql.dbo.patients_address AS pa ON p.id = pa.patients_id
-                    LEFT JOIN ArcusAirSql.dbo.patients_contact AS pc ON p.id = pc.patients_id
+                    JOIN ArcusAirSql.dbo.organisations AS o ON p.orguid = o.id
+                    JOIN ArcusAirSql.dbo.referencevalues AS rv_gender ON p.genderuid = rv_gender.id
+                    JOIN ArcusAirSql.dbo.patients_address AS pa ON p.id = pa.patients_id
+                    JOIN ArcusAirSql.dbo.patients_contact AS pc ON p.id = pc.patients_id
+                    JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
                 WHERE
-                    p.mrn = @PatientCode
-                GROUP BY
-                    p.id,
-                    p.mrn,
-                    p.firstname,
-                    p.middlename,
-                    p.lastname,
-                    p.dateofbirth,
-                    rv_gender.valuedescription,
-                    p.nationalid,
-                    p.maritalstatusuid,
-                    rv_nationality.valuedescription,
-                    rv_race.valuedescription,
-                    rv_occupation.valuedescription,
-                    rv_bloodgroup.valuedescription,
-                    rv_rhfactor.valuedescription,
-                    rv_religion.valuedescription,
-                    rv_maritalstatus.valuedescription,
-                    rv_patienttype.valuedescription,
-                    p.isvip,
-                    p.registereddate,
-                    p.ismcreg,
-                    p.passportno,
-                    o.name,
-                    o.code";
+                    pv.visitid = @VisitId
+                    AND o.code = 'PC02'";
 
-            return await connection.QueryFirstOrDefaultAsync<PatientMigrationDto>(sql, new { PatientCode = patientCode });
+            // Dapper sẽ tự động map các cột trả về vào các Property của class TiepNhanDto
+            return await connection.QueryFirstOrDefaultAsync<TiepNhanDto>(sql, new { VisitId = visitId });
         }
 
-        public async Task<MigrationResult> MigratePatientAsync(PatientMigrationDto p)
+        public async Task<MigrationResult> MigrateVisitAsync(TiepNhanDto data)
         {
             using var connection = new SqlConnection(_newHisConn);
             await connection.OpenAsync();
@@ -109,57 +95,47 @@ namespace HisMigrationTool.Services
 
             try
             {
-                //// 1. Kiểm tra tồn tại bệnh nhân ở DB mới
-                //string sqlCheck = "SELECT TOP 1 id_Benhnhan FROM BV_Benhnhan WHERE MaBenhnhan = @MaBenhNhan";
-                //int? existingId = await connection.QueryFirstOrDefaultAsync<int?>(sqlCheck, new { p.MaBenhNhan }, transaction);
+                // Dùng Dapper truyền object 'data' trực tiếp. 
+                // Dapper tự động map các biến @TenBien với Property tương ứng trong TiepNhanDto
+                string sqlInsert = @"
+                    INSERT INTO BV_Tiepnhan (
+                        id_DMDoituong, id_Nhanvien, id_Benhnhan, Hoten, Ten, Ngaythangnamsinh, Namsinh, 
+                        Gioitinh, Diachidaydu, Phanloaikham, Trangthai, Dathuphi, id_Quaytiepnhan, 
+                        Noitru, id_Hosonoitru, Ngoaitru, Sonhapvien, Ngaygiotiepnhan, id_Voucher, 
+                        id_TKTamung, Tamung, DuyetBHYT, Tiepnhantunoitru, Lydomienphi, Thuephong, 
+                        BNThammy, id_benhnhanTK, id_SttBenhnhanBD, Songaydieutri_ngoaitru, Tuoi, 
+                        Dienthoai, KoKiemtraGiamdinh, id_DMGoi, id_ChiNhanh, NgaygioThu, Mathe, 
+                        Yeucau_BS, SudungBHBL, Khuvuc, Xuatvien, XV_Trangthai, Diachidaydu_Noitru, 
+                        id_KhoaPhongTN, VIP, DaCheckin, Checkin_Noitru
+                    )
+                    VALUES (
+                        @id_DMDoituong, @id_Nhanvien, @id_Benhnhan, @Hoten, @Ten, @Ngaythangnamsinh, @Namsinh, 
+                        @Gioitinh, @Diachidaydu, @Phanloaikham, @Trangthai, @Dathuphi, @id_Quaytiepnhan, 
+                        @Noitru, @id_Hosonoitru, @Ngoaitru, @Sonhapvien, @Ngaygiotiepnhan, @id_Voucher, 
+                        @id_TKTamung, @Tamung, @DuyetBHYT, @Tiepnhantunoitru, @Lydomienphi, @Thuephong, 
+                        @BNThammy, @id_benhnhanTK, @id_SttBenhnhanBD, @Songaydieutri_ngoaitru, @Tuoi, 
+                        @Dienthoai, @KoKiemtraGiamdinh, @id_DMGoi, @id_ChiNhanh, @NgaygioThu, @Mathe, 
+                        @Yeucau_BS, @SudungBHBL, @Khuvuc, @Xuatvien, @XV_Trangthai, @Diachidaydu_Noitru, 
+                        @id_KhoaPhongTN, @VIP, @DaCheckin, @Checkin_Noitru
+                    );
+                    SELECT CAST(SCOPE_IDENTITY() as int);";
 
-                //if (!existingId.HasValue)
-                //{
-                //    return new MigrationResult
-                //    {
-                //        IsSuccess = false,
-                //        Message = $"Không tìm thấy Bệnh nhân '{p.MaBenhNhan}' ở DB Mới. Hãy đảm bảo danh mục BN đã được đồng bộ."
-                //    };
-                //}
+                // Thực thi câu lệnh Insert và lấy về ID tự tăng (id_Tiepnhan)
+                int newId = await connection.QuerySingleAsync<int>(sqlInsert, data, transaction);
 
-                //p.New_id_Benhnhan = existingId.Value;
+                // Nếu có các bảng khác cần insert kèm (VD: BV_ChiDinh, BV_KhamBenh...), 
+                // bạn có thể lấy `newId` này để làm khóa ngoại truyền tiếp vào các câu Insert phía dưới.
+                // data.id_Tiepnhan = newId;
 
-                //// 2. Insert các bảng theo thứ tự, sử dụng SCOPE_IDENTITY() để lấy ID tự tăng
-                //string sqlTiepNhan = "INSERT INTO BV_Tiepnhan (id_Benhnhan, ThoiGianTiepNhan) VALUES (@New_id_Benhnhan, @ThoiGianVaoVien); SELECT CAST(SCOPE_IDENTITY() as int);";
-                //p.New_id_Tiepnhan = await connection.QuerySingleAsync<int>(sqlTiepNhan, p, transaction);
-
-                //await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan, id_Benhnhan, Diachi_Daydu) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @DiaChi);", p, transaction);
-                //await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Luutru (id_Tiepnhan, id_Benhnhan, ThoiGianVao) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @ThoiGianVaoVien);", p, transaction);
-                //await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Phanloaibenh (id_Tiepnhan, id_Benhnhan, MaICD, TenBenh) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @MaICD, @TenBenh);", p, transaction);
-                //await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan, id_Benhnhan, MaBHYT) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @MaBHYT);", p, transaction);
-
-                //string sqlPhieuCD = "INSERT INTO BV_Phieuchidinhvaovien (id_Tiepnhan, id_Benhnhan, Ngaychidinh) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @ThoiGianVaoVien); SELECT CAST(SCOPE_IDENTITY() as int);";
-                //p.New_id_Phieuchidinh = await connection.QuerySingleAsync<int>(sqlPhieuCD, p, transaction);
-
-                //await connection.ExecuteAsync("INSERT INTO BV_Sonhapvien (id_Tiepnhan, id_Benhnhan, Ngaynhapvien) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @ThoiGianVaoVien);", p, transaction);
-
-                //string sqlBenhAn = "INSERT INTO BV_BenhAn_Ngoaitru (id_Tiepnhan, id_Benhnhan, Ngaytao) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @ThoiGianVaoVien); SELECT CAST(SCOPE_IDENTITY() as int);";
-                //p.New_id_BenhAn = await connection.QuerySingleAsync<int>(sqlBenhAn, p, transaction);
-
-                //await connection.ExecuteAsync("INSERT INTO BV_Noitru_Benhnhantaikhoa (id_Tiepnhan, id_Benhnhan, MaKhoa, ThoiGianVaoKhoa) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan, @MaKhoaPhong, @ThoiGianVaoVien);", p, transaction);
-
-                //// 3. Logic riêng cho trẻ sơ sinh (nhỏ hơn 30 ngày tuổi)
-                //if (p.NgaySinh.HasValue && (DateTime.Now - p.NgaySinh.Value).TotalDays <= 30)
-                //{
-                //    await connection.ExecuteAsync("INSERT INTO BV_HosonoitruBV_Tresosinh (id_Tiepnhan, id_Benhnhan) VALUES (@New_id_Tiepnhan, @New_id_Benhnhan);", p, transaction);
-                //}
-
-                //// Nếu mọi thứ trơn tru -> Commit
-                //transaction.Commit();
+                transaction.Commit();
                 return new MigrationResult
                 {
                     IsSuccess = true,
-                    // Message = $"Đồng bộ thành công! ID Bệnh nhân: {p.New_id_Benhnhan} | ID Lượt tiếp nhận: {p.New_id_Tiepnhan}"
+                    Message = $"Đồng bộ thành công! Tạo Lượt tiếp nhận với ID mới: {newId}"
                 };
             }
             catch (Exception ex)
             {
-                // Lỗi ở bất kỳ bảng nào -> Hủy bỏ (Rollback) tất cả
                 transaction.Rollback();
                 return new MigrationResult
                 {
