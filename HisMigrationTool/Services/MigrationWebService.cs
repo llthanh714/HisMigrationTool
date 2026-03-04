@@ -96,7 +96,7 @@ namespace HisMigrationTool.Services
                     N'' AS Toanthan, N'' AS MasoChungchi, N'' AS dmdc_Id_Khoa, N'' AS dmdc_Ten_Khoa, 0 AS id_Lanmangthai,
                     N'' AS Chidinhdichvu, N'' AS Chidinhdieutri, N'' AS Toathuoc, N'' AS Ketluan, 0 AS id_Benhnhanphongkham,
                     NULL AS Dieutri_Tungay, NULL AS Dieutri_Denngay, N'' AS Phuongphap_Dieutri, N'' AS Tinhtrang_Ravien,
-                    0 AS Loai_BenhAn, N'' AS Phanloai_Capcuu, N'' AS Phanloai_Ravien, N'' AS Huongdieutri, CAST(0 AS BIT) AS QuenSo,
+                    2 AS Loai_BenhAn, N'' AS Phanloai_Capcuu, N'' AS Phanloai_Ravien, N'' AS Huongdieutri, CAST(0 AS BIT) AS QuenSo,
                     N'' AS Danhgia_tenga, CAST(0 AS BIT) AS Benh_phuctap, N'' AS Danhgia_tutu, u.code AS id_nguoilap, u.name AS ten_nguoilap,
                     CAST(0 AS BIT) AS duyetphieu, NULL AS ngayduyet, 0 AS id_BA_Phuctap, N'' AS chiphi_taikham
                 FROM ArcusAirSql.dbo.patients AS p
