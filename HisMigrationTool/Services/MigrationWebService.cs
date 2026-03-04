@@ -15,14 +15,12 @@ namespace HisMigrationTool.Services
             _newHisConn = config.GetConnectionString("NewHis") ?? "";
         }
 
-        // 1. Thêm tham số Action<string> để đẩy log về giao diện
         public async Task<VisitMigrationData?> SearchVisitAsync(string visitId, Action<string>? onProgress = null)
         {
             using var connection = new SqlConnection(_oldHisConn);
 
-            onProgress?.Invoke($"[1/3] Đang kết nối tới DB ArcusAir để tìm VisitID: {visitId}...");
+            onProgress?.Invoke($"[1/4] Đang kết nối tới DB ArcusAir để tìm VisitID: {visitId}...");
 
-            // Gom 2 câu lệnh truy vấn lại với nhau (cách nhau bởi dấu chấm phẩy ;)
             string sql = @"
                 -- TRUY VẤN 1: Dữ liệu Tiếp nhận
                 SELECT
@@ -39,7 +37,7 @@ namespace HisMigrationTool.Services
                     N'Bình_thường' AS Phanloaikham,
                     N'Đã_khám' AS Trangthai,
                     CAST(0 AS BIT) AS Dathuphi,
-                    N'' AS id_Quaytiepnhan, -- Nội trú không cần thông tin quầy
+                    N'' AS id_Quaytiepnhan,
                     CAST(1 AS BIT) AS Noitru,
                     0 AS id_Hosonoitru,
                     CAST(0 AS BIT) AS Ngoaitru,
@@ -118,7 +116,7 @@ namespace HisMigrationTool.Services
                     N'' AS ICD_Chandoannoichuyenden,
                     N'' AS Chandoannoichuyenden,
                     N'' AS ICD_ChandoanKKB_CC,
-                    N'' AS ChandoanKKB_CC, -- Bổ sung,
+                    N'' AS ChandoanKKB_CC, 
                     N'' AS Lydovaovien,
                     N'' AS Para,
                     N'' AS Tiensusanphukhoa,
@@ -140,38 +138,78 @@ namespace HisMigrationTool.Services
                 WHERE
                     pv.visitid = @VisitId
                     AND o.code = 'PC02';
+
+                -- TRUY VẤN 3: BỔ SUNG Dữ liệu Bệnh nhân tại khoa (BV_Noitru_Benhnhantaikhoa)
+                SELECT
+                    0 AS id_Taikhoa,
+                    N'' AS id_Khoa,
+                    N'' AS Tenkhoa,
+                    DATEADD(HOUR, 7, pv.admittedon) AS Ngaygio,
+                    pv.admissioncode AS Sonhapvien,
+                    REPLACE(p.mrn, 'PC', 'PC-') AS id_Benhnhan,
+                    p.firstname AS Hoten,
+                    CONVERT(VARCHAR(24), p.dateofbirth, 103) AS Ngaythangnamsinh,
+                    CAST(YEAR(p.dateofbirth) AS NVARCHAR(4)) AS Namsinh,
+                    CAST((2026 - YEAR(p.dateofbirth)) AS NVARCHAR(50)) AS Tuoi,
+                    rv_gender.valuedescription AS Gioitinh,
+                    N'Tại_khoa' AS Trangthai,
+                    u.code AS id_Nhanvienget,
+                    u.name AS Hoten_Nhanvienget,
+                    N'2026' AS NamNhapvien,
+                    0 AS id_Tiepnhan,
+                    N'' AS id_KhoaChuyenden,
+                    N'' AS KhoaChuyenden,
+                    NULL AS Ngaygio_Chuyen,
+                    N'' AS Giochuyenmo,
+                    N'' AS Xutri,
+                    N'' AS Hientai,
+                    N'' AS Bacsi_Truc,
+                    N'' AS YeucauThuho
+                FROM
+                    ArcusAirSql.dbo.patients AS p
+                    JOIN ArcusAirSql.dbo.organisations AS o ON p.orguid = o.id
+                    JOIN ArcusAirSql.dbo.referencevalues AS rv_gender ON p.genderuid = rv_gender.id
+                    JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
+                    JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
+                WHERE
+                    pv.visitid = @VisitId
+                    AND o.code = 'PC02';
             ";
 
             using var multi = await connection.QueryMultipleAsync(sql, new { VisitId = visitId });
 
-            // 2. Kiểm tra số dòng chặt chẽ cho Tiếp Nhận
-            onProgress?.Invoke("[2/3] Đang lấy và xác thực thông tin Tiếp nhận...");
+            onProgress?.Invoke("[2/4] Đang lấy và xác thực thông tin Tiếp nhận...");
             var tiepNhanList = (await multi.ReadAsync<TiepNhanDto>()).ToList();
 
             if (tiepNhanList.Count == 0)
                 throw new Exception($"Không tìm thấy dữ liệu Tiếp nhận cho VisitID '{visitId}'.");
-            if (tiepNhanList.Count > 1)
-                throw new Exception($"Lỗi NGHIÊM TRỌNG: Phát hiện {tiepNhanList.Count} dòng dữ liệu Tiếp nhận cho VisitID '{visitId}'. Yêu cầu chỉ được phép có đúng 1 dòng.");
 
             var tiepNhanData = tiepNhanList.First();
 
-            // 3. Kiểm tra số dòng chặt chẽ cho Phiếu chỉ định
-            onProgress?.Invoke("[3/3] Đang lấy và xác thực thông tin Phiếu chỉ định vào viện...");
+            onProgress?.Invoke("[3/4] Đang lấy và xác thực thông tin Phiếu chỉ định vào viện...");
             var phieuChiDinhList = (await multi.ReadAsync<PhieuChiDinhVaoVienDto>()).ToList();
 
             if (phieuChiDinhList.Count == 0)
                 throw new Exception($"Không tìm thấy dữ liệu Phiếu chỉ định vào viện cho VisitID '{visitId}'.");
-            if (phieuChiDinhList.Count > 1)
-                throw new Exception($"Lỗi NGHIÊM TRỌNG: Phát hiện {phieuChiDinhList.Count} dòng dữ liệu Phiếu vào viện. Yêu cầu chỉ được phép có đúng 1 dòng.");
 
             var phieuChiDinhData = phieuChiDinhList.First();
+
+            // 4. Lấy dữ liệu Bệnh nhân tại khoa
+            onProgress?.Invoke("[4/4] Đang lấy và xác thực thông tin Bệnh nhân tại khoa...");
+            var bnTaiKhoaList = (await multi.ReadAsync<BenhNhanTaiKhoaDto>()).ToList();
+
+            if (bnTaiKhoaList.Count == 0)
+                throw new Exception($"Không tìm thấy dữ liệu Bệnh nhân tại khoa cho VisitID '{visitId}'.");
+
+            var bnTaiKhoaData = bnTaiKhoaList.First();
 
             onProgress?.Invoke("✔ Hoàn tất quá trình lấy và xác thực dữ liệu từ HIS Cũ.");
 
             return new VisitMigrationData
             {
                 TiepNhan = tiepNhanData,
-                PhieuChiDinh = phieuChiDinhData
+                PhieuChiDinh = phieuChiDinhData,
+                BenhNhanTaiKhoa = bnTaiKhoaData
             };
         }
 
@@ -185,9 +223,7 @@ namespace HisMigrationTool.Services
 
             try
             {
-                // ==========================================
                 // BƯỚC 1: INSERT TIẾP NHẬN
-                // ==========================================
                 onProgress?.Invoke(">> Bắt đầu cập nhật bảng [BV_Tiepnhan]...");
                 string sqlInsertTiepNhan = @"
                     INSERT INTO BV_Tiepnhan (
@@ -215,9 +251,7 @@ namespace HisMigrationTool.Services
                 int newTiepNhanId = await connection.QuerySingleAsync<int>(sqlInsertTiepNhan, data.TiepNhan, transaction);
                 onProgress?.Invoke($"   -> Tạo thành công ID Tiếp nhận mới: {newTiepNhanId}");
 
-                // ==========================================
                 // BƯỚC 2: INSERT CÁC BẢN CON CỦA TIẾP NHẬN
-                // ==========================================
                 onProgress?.Invoke(">> Bắt đầu cập nhật các bảng liên quan: Địa chỉ, Lưu trú, Thuộc tính...");
                 string sqlInsertDiaChi = "INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan) VALUES (@id_Tiepnhan);";
                 await connection.ExecuteAsync(sqlInsertDiaChi, new { id_Tiepnhan = newTiepNhanId }, transaction);
@@ -228,9 +262,7 @@ namespace HisMigrationTool.Services
                 string sqlInsertThuocTinh = @"INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan) VALUES (@id_Tiepnhan);";
                 await connection.ExecuteAsync(sqlInsertThuocTinh, new { id_Tiepnhan = newTiepNhanId }, transaction);
 
-                // ==========================================
                 // BƯỚC 3: INSERT SỐ VÀO VIỆN
-                // ==========================================
                 onProgress?.Invoke(">> Đang cập nhật Sổ nhập viện [BV_Sonhapvien]...");
                 string sqlInsertSoNhaoVien = @"
                     INSERT INTO BV_Sonhapvien (Maso, Namluutru, Sohientai, Trangthai, Ngaygiocap, id_Nhanvien, id_Khoaphong, id_Tiepnhan) 
@@ -246,20 +278,14 @@ namespace HisMigrationTool.Services
                         id_Tiepnhan = newTiepNhanId
                     }, transaction);
 
-                // ==========================================
                 // BƯỚC 4: INSERT PHIẾU CHỈ ĐỊNH VÀO VIỆN
-                // ==========================================
                 onProgress?.Invoke(">> Đang cập nhật Phiếu chỉ định vào viện [BV_Phieuchidinhvaovien]...");
                 data.PhieuChiDinh.id_Tiepnhan = newTiepNhanId;
 
                 if (data.PhieuChiDinh.Ngaygio is DateTime dt)
-                {
                     data.PhieuChiDinh.Ngaygiodaydu = $"Vào lúc {dt.Hour} giờ {dt.Minute} phút, ngày {dt:dd} tháng {dt:MM} năm {dt:yyyy}";
-                }
                 else
-                {
                     data.PhieuChiDinh.Ngaygiodaydu = string.Empty;
-                }
 
                 string sqlInsertPhieu = @"
                     INSERT INTO BV_Phieuchidinhvaovien (
@@ -285,13 +311,37 @@ namespace HisMigrationTool.Services
 
                 await connection.ExecuteAsync(sqlInsertPhieu, data.PhieuChiDinh, transaction);
 
+                // BƯỚC 5: INSERT BỆNH NHÂN TẠI KHOA (BỔ SUNG)
+                onProgress?.Invoke(">> Đang cập nhật Bệnh nhân tại khoa [BV_Noitru_Benhnhantaikhoa]...");
+                data.BenhNhanTaiKhoa.id_Tiepnhan = newTiepNhanId;
+                data.BenhNhanTaiKhoa.id_Khoa = data.PhieuChiDinh.id_Khoadieutri;
+                data.BenhNhanTaiKhoa.Tenkhoa = data.PhieuChiDinh.Chovaodieutritaikhoa;
+
+                string sqlInsertTaiKhoa = @"
+                    INSERT INTO BV_Noitru_Benhnhantaikhoa (
+                        id_Khoa, Tenkhoa, Ngaygio, Sonhapvien, id_Benhnhan, Hoten, 
+                        Ngaythangnamsinh, Namsinh, Tuoi, Gioitinh, Trangthai, 
+                        id_Nhanvienget, Hoten_Nhanvienget, NamNhapvien, id_Tiepnhan, 
+                        id_KhoaChuyenden, KhoaChuyenden, Ngaygio_Chuyen, Giochuyenmo, 
+                        Xutri, Hientai, Bacsi_Truc, YeucauThuho
+                    ) 
+                    VALUES (
+                        @id_Khoa, @Tenkhoa, @Ngaygio, @Sonhapvien, @id_Benhnhan, @Hoten, 
+                        @Ngaythangnamsinh, @Namsinh, @Tuoi, @Gioitinh, @Trangthai, 
+                        @id_Nhanvienget, @Hoten_Nhanvienget, @NamNhapvien, @id_Tiepnhan, 
+                        @id_KhoaChuyenden, @KhoaChuyenden, @Ngaygio_Chuyen, @Giochuyenmo, 
+                        @Xutri, @Hientai, @Bacsi_Truc, @YeucauThuho
+                    )";
+
+                await connection.ExecuteAsync(sqlInsertTaiKhoa, data.BenhNhanTaiKhoa, transaction);
+
                 onProgress?.Invoke("✔ Mọi bảng đã được xử lý. Đang hoàn tất lưu trữ (Commit)...");
                 transaction.Commit();
 
                 return new MigrationResult
                 {
                     IsSuccess = true,
-                    Message = $"Đồng bộ thành công! Lượt tiếp nhận: {newTiepNhanId} & Phiếu vào viện đã được tạo."
+                    Message = $"Đồng bộ thành công! Lượt tiếp nhận: {newTiepNhanId} & Đã vào khoa {data.BenhNhanTaiKhoa.Tenkhoa}."
                 };
             }
             catch (Exception ex)

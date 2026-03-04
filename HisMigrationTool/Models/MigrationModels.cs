@@ -5,6 +5,7 @@
     {
         public TiepNhanDto TiepNhan { get; set; } = new();
         public PhieuChiDinhVaoVienDto PhieuChiDinh { get; set; } = new();
+        public BenhNhanTaiKhoaDto BenhNhanTaiKhoa { get; set; } = new();
     }
 
     public class TiepNhanDto
@@ -58,7 +59,6 @@
         public bool? Checkin_Noitru { get; set; }
     }
 
-    // DTO cho bảng BV_Phieuchidinhvaovien
     public class PhieuChiDinhVaoVienDto
     {
         public int id_Phieuchidinhvaovien { get; set; }
@@ -102,6 +102,34 @@
         public string? Tinhtrang_BHYT { get; set; }
         public bool? BN_KygiayBHYT { get; set; }
         public string? Danhgia_Tutu { get; set; }
+    }
+
+    public class BenhNhanTaiKhoaDto
+    {
+        public int id_Taikhoa { get; set; }
+        public string? id_Khoa { get; set; }
+        public string? Tenkhoa { get; set; }
+        public DateTime? Ngaygio { get; set; }
+        public string? Sonhapvien { get; set; }
+        public string? id_Benhnhan { get; set; }
+        public string? Hoten { get; set; }
+        public string? Ngaythangnamsinh { get; set; }
+        public string? Namsinh { get; set; }
+        public string? Tuoi { get; set; }
+        public string? Gioitinh { get; set; }
+        public string? Trangthai { get; set; }
+        public string? id_Nhanvienget { get; set; }
+        public string? Hoten_Nhanvienget { get; set; }
+        public string? NamNhapvien { get; set; }
+        public int? id_Tiepnhan { get; set; }
+        public string? id_KhoaChuyenden { get; set; }
+        public string? KhoaChuyenden { get; set; }
+        public DateTime? Ngaygio_Chuyen { get; set; }
+        public string? Giochuyenmo { get; set; }
+        public string? Xutri { get; set; }
+        public string? Hientai { get; set; }
+        public string? Bacsi_Truc { get; set; }
+        public string? YeucauThuho { get; set; }
     }
 
     public class MigrationResult
