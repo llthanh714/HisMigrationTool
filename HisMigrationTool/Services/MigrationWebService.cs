@@ -109,7 +109,7 @@ namespace HisMigrationTool.Services
                 LEFT JOIN ArcusAirSql.dbo.__MappingDept AS mp ON dwpv.DepartmentName = mp.TenKhoaAA
                 WHERE pv.visitid = @VisitId AND o.code = 'PC02';
 
-                -- TRUY VẤN 5: BỔ SUNG Dữ liệu Hồ sơ nội trú (BV_Hosonoitru)
+                -- TRUY VẤN 5: Dữ liệu Hồ sơ nội trú (BV_Hosonoitru)
                 SELECT
                     0 AS id_Hosonoitru, 0 AS id_Phieuchidinhvaovien, N'' AS Soluutru, pv.admissioncode AS Sonhapvien,
                     N'2026' AS Namluutru, N'' AS Mayte, 0 AS id_Tiepnhan, N'' AS id_Benhan_Phanloai, N'' AS Ten_PhanloaiBA,
@@ -203,6 +203,33 @@ namespace HisMigrationTool.Services
 
             onProgress?.Invoke("Đang mở kết nối tới hệ thống HIS Mới...");
             await connection.OpenAsync();
+
+            // =========================================================================
+            // BƯỚC KIỂM TRA VALIDATION: Bệnh nhân đã được đồng bộ trước đó chưa?
+            // =========================================================================
+            onProgress?.Invoke(">> Đang kiểm tra lịch sử đồng bộ trên hệ thống mới...");
+            string checkExistSql = @"
+                SELECT COUNT(1) 
+                FROM BV_Tiepnhan 
+                WHERE id_Benhnhan = @id_Benhnhan 
+                  AND Sonhapvien = @Sonhapvien";
+
+            int existCount = await connection.ExecuteScalarAsync<int>(checkExistSql, new
+            {
+                id_Benhnhan = data.TiepNhan.id_Benhnhan,
+                Sonhapvien = data.TiepNhan.Sonhapvien
+            });
+
+            if (existCount > 0)
+            {
+                string warningMsg = $"Bệnh nhân có Mã BN: {data.TiepNhan.id_Benhnhan} và Số nhập viện: {data.TiepNhan.Sonhapvien} đã được đồng bộ trước đó. Giao dịch bị hủy bỏ để tránh trùng lặp dữ liệu!";
+                onProgress?.Invoke($"⚠ CẢNH BÁO: {warningMsg}");
+
+                // Trả về false để hiển thị Alert màu đỏ trên giao diện
+                return new MigrationResult { IsSuccess = false, Message = warningMsg };
+            }
+            // =========================================================================
+
             using var transaction = connection.BeginTransaction();
 
             try
@@ -335,7 +362,6 @@ namespace HisMigrationTool.Services
                 }
 
                 // BƯỚC 7: INSERT HỒ SƠ NỘI TRÚ 
-                // Sử dụng QuerySingleAsync để lấy ID sinh ra
                 int newHoSoNoiTruId = 0;
                 if (!string.IsNullOrEmpty(data.HoSoNoiTru.id_Benhnhan))
                 {
