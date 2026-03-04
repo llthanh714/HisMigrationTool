@@ -23,7 +23,7 @@ namespace HisMigrationTool.Services
                 SELECT
                     0 AS id_Tiepnhan,
                     N'BHYT' AS id_DMDoituong,
-                    N'PC-00750' AS id_Nhanvien,
+                    u.code AS id_Nhanvien,
                     REPLACE(p.mrn, 'PC', 'PC-') AS id_Benhnhan,
                     p.firstname AS Hoten,
                     REVERSE(LEFT(REVERSE(p.firstname), CHARINDEX(' ', REVERSE(p.firstname) + ' ') - 1)) AS Ten,
@@ -34,11 +34,11 @@ namespace HisMigrationTool.Services
                     N'Bình_thường' AS Phanloaikham,
                     N'Đã_khám' AS Trangthai,
                     CAST(0 AS BIT) AS Dathuphi,
-                    N'' AS id_Quaytiepnhan, 
+                    N'' AS id_Quaytiepnhan, -- Nội trú không cần thông tin quầy
                     CAST(1 AS BIT) AS Noitru,
                     0 AS id_Hosonoitru,
                     CAST(0 AS BIT) AS Ngoaitru,
-                    N'' AS Sonhapvien,
+                    pv.admissioncode AS Sonhapvien,
                     DATEADD(HOUR, 7, pv.createdat) AS Ngaygiotiepnhan,
                     0 AS id_Voucher,
                     N'' AS id_TKTamung,
@@ -75,6 +75,7 @@ namespace HisMigrationTool.Services
                     JOIN ArcusAirSql.dbo.patients_address AS pa ON p.id = pa.patients_id
                     JOIN ArcusAirSql.dbo.patients_contact AS pc ON p.id = pc.patients_id
                     JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
+                    JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
                 WHERE
                     pv.visitid = @VisitId
                     AND o.code = 'PC02'";
@@ -141,16 +142,28 @@ namespace HisMigrationTool.Services
 
                 await connection.ExecuteAsync(sqlInsertThuocTinh, new { id_Tiepnhan = newTiepNhanId }, transaction);
 
+                // BƯỚC 5: Insert vào bảng BV_Sonhapvien với newTiepNhanId vừa nhận được.
+                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
+                string sqlInsertSoNhaoVien = @"
+                    INSERT INTO BV_Sonhapvien (Maso, Namluutru, Sohientai, Trangthai, Ngaygiocap, id_Nhanvien, id_Khoaphong, id_Tiepnhan) 
+                    VALUES (@Maso, 2026, @Sohientai, N'Sử_dụng', @Ngaygio, @Nhanvien, N'NT_CAPCUU', @id_Tiepnhan);";
 
-                // Nếu muốn insert thêm các bảng khác (BV_BenhAn, BV_KhamBenh...), 
-                // bạn chỉ cần copy Bước 2, đổi tên bảng, đổi câu lệnh SQL và tái sử dụng `newTiepNhanId` tại đây.
+                await connection.ExecuteAsync(sqlInsertSoNhaoVien,
+                    new
+                    {
+                        Maso = data.Sonhapvien,
+                        Sohientai = Convert.ToInt32(data.Sonhapvien),
+                        Ngaygio = data.Ngaygiotiepnhan,
+                        Nhanvien = data.id_Nhanvien,
+                        id_Tiepnhan = newTiepNhanId
+                    }, transaction);
 
                 // Commit tất cả giao dịch nếu mọi thứ thành công
                 transaction.Commit();
                 return new MigrationResult
                 {
                     IsSuccess = true,
-                    Message = $"Đồng bộ thành công! Lượt tiếp nhận: {newTiepNhanId}"
+                    Message = $"Đồng bộ thành công với mã số tiếp nhận: {newTiepNhanId}"
                 };
             }
             catch (Exception ex)
