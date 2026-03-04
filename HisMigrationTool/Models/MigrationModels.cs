@@ -1,6 +1,12 @@
 ﻿namespace HisMigrationTool.Models
 {
-    // Đối tượng map trực tiếp với các cột từ câu lệnh SELECT
+    // Class tổng (Aggregate Root) chứa toàn bộ dữ liệu của 1 đợt chuyển đổi
+    public class VisitMigrationData
+    {
+        public TiepNhanDto TiepNhan { get; set; } = new();
+        public PhieuChiDinhVaoVienDto PhieuChiDinh { get; set; } = new();
+    }
+
     public class TiepNhanDto
     {
         public int id_Tiepnhan { get; set; }
@@ -50,6 +56,52 @@
         public bool? VIP { get; set; }
         public bool? DaCheckin { get; set; }
         public bool? Checkin_Noitru { get; set; }
+    }
+
+    // DTO cho bảng BV_Phieuchidinhvaovien
+    public class PhieuChiDinhVaoVienDto
+    {
+        public int id_Phieuchidinhvaovien { get; set; }
+        public string? Sonhapvien { get; set; }
+        public string? Namluutru { get; set; }
+        public int? id_Tiepnhan { get; set; }
+        public string? id_Benhan_Phanloai { get; set; }
+        public string? Ten_PhanloaiBA { get; set; }
+        public string? id_Benhnhan { get; set; }
+        public string? Lienhe_hoten { get; set; }
+        public string? Lienhe_diachi { get; set; }
+        public string? Lienhe_sodienthoai { get; set; }
+        public string? id_Bacsi_Lambenhan { get; set; }
+        public string? Hoten_Bacsi_Lambenhan { get; set; }
+        public string? id_Nhanvien { get; set; }
+        public string? Hoten_Nhanvien { get; set; }
+        public string? id_DMPhongkham { get; set; }
+        public string? Ten_Phongkham { get; set; }
+        public DateTime? Ngaygio { get; set; }
+        public string? Ngaygiodaydu { get; set; }
+        public string? Quatrinhbenhly { get; set; }
+        public string? Tiensubenh_Banthan { get; set; }
+        public string? Tiensubenh_Giadinh { get; set; }
+        public string? Toanthan { get; set; }
+        public string? Cacbophan { get; set; }
+        public string? KQ_Canlamsang { get; set; }
+        public string? Daxuly { get; set; }
+        public string? Chuy { get; set; }
+        public string? Chovaodieutritaikhoa { get; set; }
+        public string? id_Khoadieutri { get; set; }
+        public string? ICD_Chandoannoichuyenden { get; set; }
+        public string? Chandoannoichuyenden { get; set; }
+        public string? ICD_ChandoanKKB_CC { get; set; }
+        public string? ChandoanKKB_CC { get; set; }
+        public string? Lydovaovien { get; set; }
+        public string? Para { get; set; }
+        public string? Tiensusanphukhoa { get; set; }
+        public string? Khamchuyenkhoa { get; set; }
+        public string? Lienhe_Namsinh { get; set; }
+        public string? Lienhe_Quanhe { get; set; }
+        public string? Tinhtrang_BHYT { get; set; }
+        public bool? BN_KygiayBHYT { get; set; }
+        public string? Danhgia_Tutu { get; set; }
     }
 
     public class MigrationResult

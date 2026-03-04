@@ -15,11 +15,13 @@ namespace HisMigrationTool.Services
             _newHisConn = config.GetConnectionString("NewHis") ?? "";
         }
 
-        public async Task<TiepNhanDto?> SearchVisitAsync(string visitId)
+        public async Task<VisitMigrationData?> SearchVisitAsync(string visitId)
         {
             using var connection = new SqlConnection(_oldHisConn);
 
+            // Gom 2 câu lệnh truy vấn lại với nhau (cách nhau bởi dấu chấm phẩy ;)
             string sql = @"
+                -- TRUY VẤN 1: Dữ liệu Tiếp nhận
                 SELECT
                     0 AS id_Tiepnhan,
                     N'BHYT' AS id_DMDoituong,
@@ -75,15 +77,81 @@ namespace HisMigrationTool.Services
                     JOIN ArcusAirSql.dbo.patients_address AS pa ON p.id = pa.patients_id
                     JOIN ArcusAirSql.dbo.patients_contact AS pc ON p.id = pc.patients_id
                     JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
-                    JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
-                WHERE
-                    pv.visitid = @VisitId
-                    AND o.code = 'PC02'";
+                WHERE pv.visitid = @VisitId AND o.code = 'PC02';
 
-            return await connection.QueryFirstOrDefaultAsync<TiepNhanDto>(sql, new { VisitId = visitId });
+                -- TRUY VẤN 2: Dữ liệu Phiếu chỉ định vào viện
+                -- Lưu ý: Bạn cần update lại các JOIN để lấy đúng cột bệnh án/lâm sàng ở DB cũ
+                SELECT
+                    0 AS id_Phieuchidinhvaovien,
+                    pv.admissioncode AS Sonhapvien,
+                    N'2026' AS Namluutru,
+                    0 AS id_Tiepnhan,
+                    N'' AS id_Benhan_Phanloai,
+                    N'' AS Ten_PhanloaiBA,
+                    REPLACE(p.mrn, 'PC', 'PC-') AS id_Benhnhan,
+                    N'' AS Lienhe_hoten,
+                    N'' AS Lienhe_diachi,
+                    N'' AS Lienhe_sodienthoai,
+                    prcu.code AS id_Bacsi_Lambenhan,
+                    prcu.name AS Hoten_Bacsi_Lambenhan,
+                    u.code AS id_Nhanvien,
+                    u.name AS Hoten_Nhanvien,
+                    N'NT_CAPCUU' AS id_DMPhongkham,
+                    N'PHÒNG CẤP CỨU' AS Ten_Phongkham,
+                    pv.admittedon AS Ngaygio,
+                    N'' AS Ngaygiodaydu,
+                    N'' AS Quatrinhbenhly,
+                    N'' AS Tiensubenh_Banthan,
+                    N'' AS Tiensubenh_Giadinh,
+                    N'' AS Toanthan,
+                    N'' AS Cacbophan,
+                    N'' AS KQ_Canlamsang,
+                    N'' AS Daxuly,
+                    N'' AS Chuy,
+                    N'' AS Chovaodieutritaikhoa, -- Bổ sung
+                    N'' AS id_Khoadieutri, -- Bổ sung
+                    N'' AS ICD_Chandoannoichuyenden,
+                    N'' AS Chandoannoichuyenden,
+                    N'' AS ICD_ChandoanKKB_CC,
+                    N'' AS ChandoanKKB_CC, -- Bổ sung,
+                    N'' AS Lydovaovien,
+                    N'' AS Para,
+                    N'' AS Tiensusanphukhoa,
+                    N'' AS Khamchuyenkhoa,
+                    N'' AS Lienhe_Namsinh,
+                    N'' AS Lienhe_Quanhe,
+                    N'Có_thẻ_BHYT' AS Tinhtrang_BHYT,
+                    CAST(1 AS BIT) AS BN_KygiayBHYT,
+                    N'' AS Danhgia_Tutu
+                FROM
+                    ArcusAirSql.dbo.patients AS p
+                    JOIN ArcusAirSql.dbo.organisations AS o ON p.orguid = o.id
+                    JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
+                    JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
+                    JOIN ArcusAirSql.dbo.patientvisits_visitcareproviders AS prc ON prc.patientvisits_id = pv.id AND prc.isprimarycareprovider = 1
+                    JOIN ArcusAirSql.dbo.users AS prcu ON prc.careprovideruid = prcu.id
+                WHERE pv.visitid = @VisitId AND o.code = 'PC02';
+            ";
+
+            // Sử dụng QueryMultipleAsync để đọc cùng lúc nhiều bảng trả về
+            using var multi = await connection.QueryMultipleAsync(sql, new { VisitId = visitId });
+
+            var tiepNhanData = await multi.ReadFirstOrDefaultAsync<TiepNhanDto>();
+
+            // Nếu không tìm thấy lượt tiếp nhận, thì return null luôn
+            if (tiepNhanData == null) return null;
+
+            var phieuChiDinhData = await multi.ReadFirstOrDefaultAsync<PhieuChiDinhVaoVienDto>()
+                                   ?? new PhieuChiDinhVaoVienDto(); // Đề phòng query 2 ko có data
+
+            return new VisitMigrationData
+            {
+                TiepNhan = tiepNhanData,
+                PhieuChiDinh = phieuChiDinhData
+            };
         }
 
-        public async Task<MigrationResult> MigrateVisitAsync(TiepNhanDto data)
+        public async Task<MigrationResult> MigrateVisitAsync(VisitMigrationData data)
         {
             using var connection = new SqlConnection(_newHisConn);
             await connection.OpenAsync();
@@ -91,7 +159,9 @@ namespace HisMigrationTool.Services
 
             try
             {
-                // BƯỚC 1: Insert vào bảng BV_Tiepnhan và lấy ra ID tự tăng
+                // ==========================================
+                // BƯỚC 1: INSERT TIẾP NHẬN
+                // ==========================================
                 string sqlInsertTiepNhan = @"
                     INSERT INTO BV_Tiepnhan (
                         id_DMDoituong, id_Nhanvien, id_Benhnhan, Hoten, Ten, Ngaythangnamsinh, Namsinh, 
@@ -115,35 +185,23 @@ namespace HisMigrationTool.Services
                     );
                     SELECT CAST(SCOPE_IDENTITY() as int);";
 
-                int newTiepNhanId = await connection.QuerySingleAsync<int>(sqlInsertTiepNhan, data, transaction);
+                int newTiepNhanId = await connection.QuerySingleAsync<int>(sqlInsertTiepNhan, data.TiepNhan, transaction);
 
-
-                // BƯỚC 2: Insert vào bảng BV_Tiepnhan_Diachi với newTiepNhanId vừa nhận được.
-                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
-                string sqlInsertDiaChi = @"
-                    INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan) 
-                    VALUES (@id_Tiepnhan);";
-
+                // ==========================================
+                // BƯỚC 2: INSERT CÁC BẢN CON CỦA TIẾP NHẬN (ví dụ: Địa chỉ, liên hệ, v.v.)
+                // ==========================================
+                string sqlInsertDiaChi = "INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan) VALUES (@id_Tiepnhan);";
                 await connection.ExecuteAsync(sqlInsertDiaChi, new { id_Tiepnhan = newTiepNhanId }, transaction);
 
-                // BƯỚC 3: Insert vào bảng BV_Tiepnhan_Luutru với newTiepNhanId vừa nhận được.
-                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
-                string sqlInsertLuuTru = @"
-                    INSERT INTO BV_Tiepnhan_Luutru (id_Tiepnhan) 
-                    VALUES (@id_Tiepnhan);";
-
+                string sqlInsertLuuTru = @"INSERT INTO BV_Tiepnhan_Luutru (id_Tiepnhan) VALUES (@id_Tiepnhan);";
                 await connection.ExecuteAsync(sqlInsertLuuTru, new { id_Tiepnhan = newTiepNhanId }, transaction);
 
-                // BƯỚC 4: Insert vào bảng BV_Tiepnhan_Thuoctinh với newTiepNhanId vừa nhận được.
-                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
-                string sqlInsertThuocTinh = @"
-                    INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan) 
-                    VALUES (@id_Tiepnhan);";
-
+                string sqlInsertThuocTinh = @"INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan) VALUES (@id_Tiepnhan);";
                 await connection.ExecuteAsync(sqlInsertThuocTinh, new { id_Tiepnhan = newTiepNhanId }, transaction);
 
-                // BƯỚC 5: Insert vào bảng BV_Sonhapvien với newTiepNhanId vừa nhận được.
-                // Các cột khác sẽ tự động nhận giá trị NULL vì trong cấu trúc bảng thiết lập ALLOW NULL.
+                // ==========================================
+                // BƯỚC 3: INSERT SỐ VÀO VIỆN
+                // ==========================================
                 string sqlInsertSoNhaoVien = @"
                     INSERT INTO BV_Sonhapvien (Maso, Namluutru, Sohientai, Trangthai, Ngaygiocap, id_Nhanvien, id_Khoaphong, id_Tiepnhan) 
                     VALUES (@Maso, 2026, @Sohientai, N'Sử_dụng', @Ngaygio, @Nhanvien, N'NT_CAPCUU', @id_Tiepnhan);";
@@ -151,24 +209,53 @@ namespace HisMigrationTool.Services
                 await connection.ExecuteAsync(sqlInsertSoNhaoVien,
                     new
                     {
-                        Maso = data.Sonhapvien,
-                        Sohientai = Convert.ToInt32(data.Sonhapvien),
-                        Ngaygio = data.Ngaygiotiepnhan,
-                        Nhanvien = data.id_Nhanvien,
+                        Maso = data.TiepNhan.Sonhapvien,
+                        Sohientai = Convert.ToInt32(data.TiepNhan.Sonhapvien),
+                        Ngaygio = data.TiepNhan.Ngaygiotiepnhan,
+                        Nhanvien = data.TiepNhan.id_Nhanvien,
                         id_Tiepnhan = newTiepNhanId
                     }, transaction);
 
-                // Commit tất cả giao dịch nếu mọi thứ thành công
+                // ==========================================
+                // BƯỚC 4: INSERT PHIẾU CHỈ ĐỊNH VÀO VIỆN
+                // ==========================================
+                // Cập nhật id_Tiepnhan khóa ngoại cho Phiếu chỉ định
+                data.PhieuChiDinh.id_Tiepnhan = newTiepNhanId;
+
+                string sqlInsertPhieu = @"
+                    INSERT INTO BV_Phieuchidinhvaovien (
+                        Sonhapvien, Namluutru, id_Tiepnhan, id_Benhan_Phanloai, Ten_PhanloaiBA, id_Benhnhan, 
+                        Lienhe_hoten, Lienhe_diachi, Lienhe_sodienthoai, id_Bacsi_Lambenhan, Hoten_Bacsi_Lambenhan, 
+                        id_Nhanvien, Hoten_Nhanvien, id_DMPhongkham, Ten_Phongkham, Ngaygio, Ngaygiodaydu, 
+                        Quatrinhbenhly, Tiensubenh_Banthan, Tiensubenh_Giadinh, Toanthan, Cacbophan, KQ_Canlamsang, 
+                        Daxuly, Chuy, Chovaodieutritaikhoa, id_Khoadieutri, ICD_Chandoannoichuyenden, 
+                        Chandoannoichuyenden, ICD_ChandoanKKB_CC, ChandoanKKB_CC, Lydovaovien, Para, 
+                        Tiensusanphukhoa, Khamchuyenkhoa, Lienhe_Namsinh, Lienhe_Quanhe, Tinhtrang_BHYT, 
+                        BN_KygiayBHYT, Danhgia_Tutu
+                    ) 
+                    VALUES (
+                        @Sonhapvien, @Namluutru, @id_Tiepnhan, @id_Benhan_Phanloai, @Ten_PhanloaiBA, @id_Benhnhan, 
+                        @Lienhe_hoten, @Lienhe_diachi, @Lienhe_sodienthoai, @id_Bacsi_Lambenhan, @Hoten_Bacsi_Lambenhan, 
+                        @id_Nhanvien, @Hoten_Nhanvien, @id_DMPhongkham, @Ten_Phongkham, @Ngaygio, @Ngaygiodaydu, 
+                        @Quatrinhbenhly, @Tiensubenh_Banthan, @Tiensubenh_Giadinh, @Toanthan, @Cacbophan, @KQ_Canlamsang, 
+                        @Daxuly, @Chuy, @Chovaodieutritaikhoa, @id_Khoadieutri, @ICD_Chandoannoichuyenden, 
+                        @Chandoannoichuyenden, @ICD_ChandoanKKB_CC, @ChandoanKKB_CC, @Lydovaovien, @Para, 
+                        @Tiensusanphukhoa, @Khamchuyenkhoa, @Lienhe_Namsinh, @Lienhe_Quanhe, @Tinhtrang_BHYT, 
+                        @BN_KygiayBHYT, @Danhgia_Tutu
+                    )";
+
+                await connection.ExecuteAsync(sqlInsertPhieu, data.PhieuChiDinh, transaction);
+
+
                 transaction.Commit();
                 return new MigrationResult
                 {
                     IsSuccess = true,
-                    Message = $"Đồng bộ thành công với mã số tiếp nhận: {newTiepNhanId}"
+                    Message = $"Đồng bộ thành công! Lượt tiếp nhận: {newTiepNhanId} & Phiếu vào viện đã được tạo."
                 };
             }
             catch (Exception ex)
             {
-                // Hủy toàn bộ thay đổi (gồm cả insert bảng 1 và bảng 2) nếu có bất kỳ lỗi nào xảy ra
                 transaction.Rollback();
                 return new MigrationResult
                 {
