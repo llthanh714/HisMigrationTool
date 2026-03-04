@@ -58,6 +58,7 @@
                     Kết quả truy vấn Visit ID: <span class="gh-text-accent">@searchVisitId</span>
                 </div>
                 <div class="gh-card-body">
+                    @* <h5 style="margin-top:0; margin-bottom: 10px; font-size: 13px; color: var(--gh-text-muted);">THÔNG TIN TIẾP NHẬN</h5> *@
                     <div class="gh-grid">
                         <div class="gh-grid-item"><strong>Mã BN</strong> @currentData.TiepNhan.id_Benhnhan</div>
                         <div class="gh-grid-item"><strong>Họ Tên</strong> @currentData.TiepNhan.Hoten</div>
@@ -68,10 +69,32 @@
                         <div class="gh-grid-item"><strong>Thời gian tiếp nhận</strong> @currentData.TiepNhan.Ngaygiotiepnhan?.ToString("dd/MM/yyyy HH:mm")</div>
                         <div class="gh-grid-item"><strong>Đối tượng</strong> @currentData.TiepNhan.id_DMDoituong</div>
                     </div>
+
+                    @* <hr style="border-color: var(--gh-border); margin: 16px 0;" />
+                    
+                    <h5 style="margin-top:0; margin-bottom: 10px; font-size: 13px; color: var(--gh-text-muted);">THÔNG TIN BỆNH NHÂN TẠI KHOA (ĐIỀU TRỊ)</h5>
+                    <div class="gh-grid">
+                        <div class="gh-grid-item"><strong>Khoa điều trị</strong> @currentData.BenhNhanTaiKhoa.Tenkhoa</div>
+                        <div class="gh-grid-item"><strong>Trạng thái</strong> <span class="gh-text-accent">@currentData.BenhNhanTaiKhoa.Trangthai</span></div>
+                        <div class="gh-grid-item"><strong>Nhân viên nhận bệnh</strong> @currentData.BenhNhanTaiKhoa.Hoten_Nhanvienget</div>
+                        <div class="gh-grid-item"><strong>Thời gian vào khoa</strong> @currentData.BenhNhanTaiKhoa.Ngaygio?.ToString("dd/MM/yyyy HH:mm")</div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(currentData.BenhAnNgoaiTru?.id_Benhnhan))
+                    {
+                        <hr style="border-color: var(--gh-border); margin: 16px 0;" />
+                        <h5 style="margin-top:0; margin-bottom: 10px; font-size: 13px; color: var(--gh-text-muted);">THÔNG TIN BỆNH ÁN NGOẠI TRÚ</h5>
+                        <div class="gh-grid">
+                            <div class="gh-grid-item"><strong>Phòng khám</strong> @currentData.BenhAnNgoaiTru.Ten_Khoaphong</div>
+                            <div class="gh-grid-item"><strong>Bác sĩ khám</strong> @currentData.BenhAnNgoaiTru.Hoten_Bacsi</div>
+                            <div class="gh-grid-item"><strong>Thời gian khám</strong> @currentData.BenhAnNgoaiTru.Ngaygio?.ToString("dd/MM/yyyy HH:mm")</div>
+                            <div class="gh-grid-item"><strong>Người lập</strong> @currentData.BenhAnNgoaiTru.ten_nguoilap</div>
+                        </div>
+                    } *@
                 </div>
                 <div class="gh-card-footer">
                     <button class="gh-btn gh-btn-primary" @onclick="ConfirmMigration" disabled="@isMigrating">
-                        @(isMigrating ? "Hệ thống đang đồng bộ..." : "Tiến hành Đồng bộ qua HIS Mới")
+                        @(isMigrating ? "Hệ thống đang đồng bộ..." : "Tiến hành đồng bộ")
                     </button>
                     <button class="gh-btn gh-btn-danger ml-2" @onclick="ClearForm" disabled="@isMigrating">Hủy</button>
                 </div>

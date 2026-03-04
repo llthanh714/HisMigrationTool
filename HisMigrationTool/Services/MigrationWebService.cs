@@ -19,7 +19,7 @@ namespace HisMigrationTool.Services
         {
             using var connection = new SqlConnection(_oldHisConn);
 
-            onProgress?.Invoke($"[1/4] Đang kết nối tới DB ArcusAir để tìm VisitID: {visitId}...");
+            onProgress?.Invoke($"[1/5] Đang kết nối tới DB ArcusAir để tìm VisitID: {visitId}...");
 
             string sql = @"
                 -- TRUY VẤN 1: Dữ liệu Tiếp nhận
@@ -139,7 +139,7 @@ namespace HisMigrationTool.Services
                     pv.visitid = @VisitId
                     AND o.code = 'PC02';
 
-                -- TRUY VẤN 3: BỔ SUNG Dữ liệu Bệnh nhân tại khoa (BV_Noitru_Benhnhantaikhoa)
+                -- TRUY VẤN 3: Dữ liệu Bệnh nhân tại khoa (BV_Noitru_Benhnhantaikhoa)
                 SELECT
                     0 AS id_Taikhoa,
                     N'' AS id_Khoa,
@@ -174,11 +174,81 @@ namespace HisMigrationTool.Services
                 WHERE
                     pv.visitid = @VisitId
                     AND o.code = 'PC02';
+
+                -- TRUY VẤN 4: Dữ liệu Bệnh án Ngoại trú (BV_BenhAn_Ngoaitru)
+                SELECT
+                    0 AS id_Benhan_Ngoaitru,
+                    0 AS STT_Sokhambenh,
+                    N'' AS id_Benhan_Phanloai_Khambenh, -- Cần bổ sung thêm
+                    N'2026' AS Namluutru,
+                    0 AS id_Hosonoitru,
+                    REPLACE(p.mrn, 'PC', 'PC-') AS id_Benhnhan,
+                    0 AS id_Tiepnhan,
+                    N'BHYT' AS id_DMDoituong,
+                    prcu.code AS id_Bacsi,
+                    prcu.name AS Hoten_Bacsi,
+                    DATEADD(HOUR, 7, pv.admittedon) AS Ngaygio,
+                    N'' AS Ngaygiokhamdaydu,
+                    0 AS id_DuyetBHYT,
+                    mp.MaKhoaHIS AS id_DMPhongkham,
+                    mp.TenKhoaHIS AS Ten_Khoaphong,
+                    N'' AS Quatrinhbenhly,
+                    N'' AS Tiensubenh_Banthan,
+                    N'' AS Tiensubenh_Giadinh,
+                    N'' AS Cacbophan,
+                    N'' AS Lydovaovien,
+                    N'' AS KQ_Canlamsang,
+                    N'' AS id_ICD_Chandoan,
+                    N'' AS Chandoan,
+                    N'' AS Denghi,
+                    N'' AS Xutri,
+                    N'' AS Ngaytaikham,
+                    N'' AS Dientienbenh,
+                    N'' AS Toanthan,
+                    N'' AS MasoChungchi,
+                    N'' AS dmdc_Id_Khoa,
+                    N'' AS dmdc_Ten_Khoa,
+                    0 AS id_Lanmangthai,
+                    N'' AS Chidinhdichvu,
+                    N'' AS Chidinhdieutri,
+                    N'' AS Toathuoc,
+                    N'' AS Ketluan,
+                    0 AS id_Benhnhanphongkham,
+                    NULL AS Dieutri_Tungay,
+                    NULL AS Dieutri_Denngay,
+                    N'' AS Phuongphap_Dieutri,
+                    N'' AS Tinhtrang_Ravien,
+                    0 AS Loai_BenhAn,
+                    N'' AS Phanloai_Capcuu,
+                    N'' AS Phanloai_Ravien,
+                    N'' AS Huongdieutri,
+                    CAST(0 AS BIT) AS QuenSo,
+                    N'' AS Danhgia_tenga,
+                    CAST(0 AS BIT) AS Benh_phuctap,
+                    N'' AS Danhgia_tutu,
+                    u.code AS id_nguoilap,
+                    u.name AS ten_nguoilap,
+                    CAST(0 AS BIT) AS duyetphieu,
+                    NULL AS ngayduyet,
+                    0 AS id_BA_Phuctap,
+                    N'' AS chiphi_taikham
+                FROM
+                    ArcusAirSql.dbo.patients AS p
+                    JOIN ArcusAirSql.dbo.organisations AS o ON p.orguid = o.id
+                    JOIN ArcusAirSql.dbo.patientvisits AS pv ON pv.patientuid = p.id
+                    JOIN ArcusAirSql.dbo.users AS u ON pv.admittedby = u.id
+                    JOIN ArcusAirSql.dbo.patientvisits_visitcareproviders AS prc ON prc.patientvisits_id = pv.id AND prc.isprimarycareprovider = 1
+                    JOIN ArcusAirSql.dbo.users AS prcu ON prc.careprovideruid = prcu.id
+                    JOIN PhuongChauDW.dbo.FactPatientVisits AS dwpv ON pv.visitid = dwpv.VisitId AND dwpv.OrganizationCode = o.code
+                    LEFT JOIN ArcusAirSql.dbo.__MappingDept AS mp ON dwpv.DepartmentName = mp.TenKhoaAA
+                WHERE
+                    pv.visitid = @VisitId
+                    AND o.code = 'PC02';
             ";
 
             using var multi = await connection.QueryMultipleAsync(sql, new { VisitId = visitId });
 
-            onProgress?.Invoke("[2/4] Đang lấy và xác thực thông tin Tiếp nhận...");
+            onProgress?.Invoke("[2/5] Đang lấy và xác thực thông tin Tiếp nhận...");
             var tiepNhanList = (await multi.ReadAsync<TiepNhanDto>()).ToList();
 
             if (tiepNhanList.Count == 0)
@@ -186,7 +256,7 @@ namespace HisMigrationTool.Services
 
             var tiepNhanData = tiepNhanList.First();
 
-            onProgress?.Invoke("[3/4] Đang lấy và xác thực thông tin Phiếu chỉ định vào viện...");
+            onProgress?.Invoke("[3/5] Đang lấy và xác thực thông tin Phiếu chỉ định vào viện...");
             var phieuChiDinhList = (await multi.ReadAsync<PhieuChiDinhVaoVienDto>()).ToList();
 
             if (phieuChiDinhList.Count == 0)
@@ -194,8 +264,7 @@ namespace HisMigrationTool.Services
 
             var phieuChiDinhData = phieuChiDinhList.First();
 
-            // 4. Lấy dữ liệu Bệnh nhân tại khoa
-            onProgress?.Invoke("[4/4] Đang lấy và xác thực thông tin Bệnh nhân tại khoa...");
+            onProgress?.Invoke("[4/5] Đang lấy và xác thực thông tin Bệnh nhân tại khoa...");
             var bnTaiKhoaList = (await multi.ReadAsync<BenhNhanTaiKhoaDto>()).ToList();
 
             if (bnTaiKhoaList.Count == 0)
@@ -203,13 +272,19 @@ namespace HisMigrationTool.Services
 
             var bnTaiKhoaData = bnTaiKhoaList.First();
 
+            onProgress?.Invoke("[5/5] Đang lấy và xác thực thông tin Bệnh án ngoại trú...");
+            var baNgoaiTruList = (await multi.ReadAsync<BenhAnNgoaiTruDto>()).ToList();
+
+            var baNgoaiTruData = baNgoaiTruList.FirstOrDefault() ?? new BenhAnNgoaiTruDto();
+
             onProgress?.Invoke("✔ Hoàn tất quá trình lấy và xác thực dữ liệu từ HIS Cũ.");
 
             return new VisitMigrationData
             {
                 TiepNhan = tiepNhanData,
                 PhieuChiDinh = phieuChiDinhData,
-                BenhNhanTaiKhoa = bnTaiKhoaData
+                BenhNhanTaiKhoa = bnTaiKhoaData,
+                BenhAnNgoaiTru = baNgoaiTruData
             };
         }
 
@@ -311,7 +386,7 @@ namespace HisMigrationTool.Services
 
                 await connection.ExecuteAsync(sqlInsertPhieu, data.PhieuChiDinh, transaction);
 
-                // BƯỚC 5: INSERT BỆNH NHÂN TẠI KHOA (BỔ SUNG)
+                // BƯỚC 5: INSERT BỆNH NHÂN TẠI KHOA
                 onProgress?.Invoke(">> Đang cập nhật Bệnh nhân tại khoa [BV_Noitru_Benhnhantaikhoa]...");
                 data.BenhNhanTaiKhoa.id_Tiepnhan = newTiepNhanId;
                 data.BenhNhanTaiKhoa.id_Khoa = data.PhieuChiDinh.id_Khoadieutri;
@@ -334,6 +409,51 @@ namespace HisMigrationTool.Services
                     )";
 
                 await connection.ExecuteAsync(sqlInsertTaiKhoa, data.BenhNhanTaiKhoa, transaction);
+
+                // BƯỚC 6: INSERT BỆNH ÁN NGOẠI TRÚ (BỔ SUNG)
+                if (!string.IsNullOrEmpty(data.BenhAnNgoaiTru.id_Benhnhan))
+                {
+                    onProgress?.Invoke(">> Đang cập nhật Bệnh án Ngoại trú [BV_BenhAn_Ngoaitru]...");
+                    data.BenhAnNgoaiTru.id_Tiepnhan = newTiepNhanId;
+
+                    if (data.BenhAnNgoaiTru.Ngaygio is DateTime dtNgoaitru)
+                        data.BenhAnNgoaiTru.Ngaygiokhamdaydu = $"Khám lúc {dtNgoaitru.Hour} giờ {dtNgoaitru.Minute} phút, ngày {dtNgoaitru:dd} tháng {dtNgoaitru:MM} năm {dtNgoaitru:yyyy}";
+
+                    string sqlInsertBaNgoaitru = @"
+                        INSERT INTO BV_BenhAn_Ngoaitru (
+                            STT_Sokhambenh, id_Benhan_Phanloai_Khambenh, Namluutru, id_Hosonoitru, 
+                            id_Benhnhan, id_Tiepnhan, id_DMDoituong, id_Bacsi, Hoten_Bacsi, 
+                            Ngaygio, Ngaygiokhamdaydu, id_DuyetBHYT, id_DMPhongkham, Ten_Khoaphong, 
+                            Quatrinhbenhly, Tiensubenh_Banthan, Tiensubenh_Giadinh, Cacbophan, 
+                            Lydovaovien, KQ_Canlamsang, id_ICD_Chandoan, Chandoan, Denghi, Xutri, 
+                            Ngaytaikham, Dientienbenh, Toanthan, MasoChungchi, dmdc_Id_Khoa, 
+                            dmdc_Ten_Khoa, id_Lanmangthai, Chidinhdichvu, Chidinhdieutri, Toathuoc, 
+                            Ketluan, id_Benhnhanphongkham, Dieutri_Tungay, Dieutri_Denngay, 
+                            Phuongphap_Dieutri, Tinhtrang_Ravien, Loai_BenhAn, Phanloai_Capcuu, 
+                            Phanloai_Ravien, Huongdieutri, QuenSo, Danhgia_tenga, Benh_phuctap, 
+                            Danhgia_tutu, id_nguoilap, ten_nguoilap, duyetphieu, ngayduyet, 
+                            id_BA_Phuctap, chiphi_taikham
+                        ) 
+                        VALUES (
+                            @STT_Sokhambenh, @id_Benhan_Phanloai_Khambenh, @Namluutru, @id_Hosonoitru, 
+                            @id_Benhnhan, @id_Tiepnhan, @id_DMDoituong, @id_Bacsi, @Hoten_Bacsi, 
+                            @Ngaygio, @Ngaygiokhamdaydu, @id_DuyetBHYT, @id_DMPhongkham, @Ten_Khoaphong, 
+                            @Quatrinhbenhly, @Tiensubenh_Banthan, @Tiensubenh_Giadinh, @Cacbophan, 
+                            @Lydovaovien, @KQ_Canlamsang, @id_ICD_Chandoan, @Chandoan, @Denghi, @Xutri, 
+                            @Ngaytaikham, @Dientienbenh, @Toanthan, @MasoChungchi, @dmdc_Id_Khoa, 
+                            @dmdc_Ten_Khoa, @id_Lanmangthai, @Chidinhdichvu, @Chidinhdieutri, @Toathuoc, 
+                            @Ketluan, @id_Benhnhanphongkham, @Dieutri_Tungay, @Dieutri_Denngay, 
+                            @Phuongphap_Dieutri, @Tinhtrang_Ravien, @Loai_BenhAn, @Phanloai_Capcuu, 
+                            @Phanloai_Ravien, @Huongdieutri, @QuenSo, @Danhgia_tenga, @Benh_phuctap, 
+                            @Danhgia_tutu, @id_nguoilap, @ten_nguoilap, @duyetphieu, @ngayduyet, 
+                            @id_BA_Phuctap, @chiphi_taikham
+                        )";
+                    await connection.ExecuteAsync(sqlInsertBaNgoaitru, data.BenhAnNgoaiTru, transaction);
+                }
+                else
+                {
+                    onProgress?.Invoke(">> (Bỏ qua Bệnh án Ngoại trú do không tìm thấy dữ liệu hợp lệ)...");
+                }
 
                 onProgress?.Invoke("✔ Mọi bảng đã được xử lý. Đang hoàn tất lưu trữ (Commit)...");
                 transaction.Commit();

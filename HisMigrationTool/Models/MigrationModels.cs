@@ -6,6 +6,7 @@
         public TiepNhanDto TiepNhan { get; set; } = new();
         public PhieuChiDinhVaoVienDto PhieuChiDinh { get; set; } = new();
         public BenhNhanTaiKhoaDto BenhNhanTaiKhoa { get; set; } = new();
+        public BenhAnNgoaiTruDto BenhAnNgoaiTru { get; set; } = new();
     }
 
     public class TiepNhanDto
@@ -130,6 +131,65 @@
         public string? Hientai { get; set; }
         public string? Bacsi_Truc { get; set; }
         public string? YeucauThuho { get; set; }
+    }
+
+    public class BenhAnNgoaiTruDto
+    {
+        public int id_Benhan_Ngoaitru { get; set; }
+        public int? STT_Sokhambenh { get; set; }
+        public string? id_Benhan_Phanloai_Khambenh { get; set; }
+        public string? Namluutru { get; set; }
+        public int? id_Hosonoitru { get; set; }
+        public string? id_Benhnhan { get; set; }
+        public int? id_Tiepnhan { get; set; }
+        public string? id_DMDoituong { get; set; }
+        public string? id_Bacsi { get; set; }
+        public string? Hoten_Bacsi { get; set; }
+        public DateTime? Ngaygio { get; set; }
+        public string? Ngaygiokhamdaydu { get; set; }
+        public int? id_DuyetBHYT { get; set; }
+        public string? id_DMPhongkham { get; set; }
+        public string? Ten_Khoaphong { get; set; }
+        public string? Quatrinhbenhly { get; set; }
+        public string? Tiensubenh_Banthan { get; set; }
+        public string? Tiensubenh_Giadinh { get; set; }
+        public string? Cacbophan { get; set; }
+        public string? Lydovaovien { get; set; }
+        public string? KQ_Canlamsang { get; set; }
+        public string? id_ICD_Chandoan { get; set; }
+        public string? Chandoan { get; set; }
+        public string? Denghi { get; set; }
+        public string? Xutri { get; set; }
+        public string? Ngaytaikham { get; set; }
+        public string? Dientienbenh { get; set; }
+        public string? Toanthan { get; set; }
+        public string? MasoChungchi { get; set; }
+        public string? dmdc_Id_Khoa { get; set; }
+        public string? dmdc_Ten_Khoa { get; set; }
+        public int? id_Lanmangthai { get; set; }
+        public string? Chidinhdichvu { get; set; }
+        public string? Chidinhdieutri { get; set; }
+        public string? Toathuoc { get; set; }
+        public string? Ketluan { get; set; }
+        public int? id_Benhnhanphongkham { get; set; }
+        public DateTime? Dieutri_Tungay { get; set; }
+        public DateTime? Dieutri_Denngay { get; set; }
+        public string? Phuongphap_Dieutri { get; set; }
+        public string? Tinhtrang_Ravien { get; set; }
+        public int? Loai_BenhAn { get; set; }
+        public string? Phanloai_Capcuu { get; set; }
+        public string? Phanloai_Ravien { get; set; }
+        public string? Huongdieutri { get; set; }
+        public bool? QuenSo { get; set; }
+        public string? Danhgia_tenga { get; set; }
+        public bool? Benh_phuctap { get; set; }
+        public string? Danhgia_tutu { get; set; }
+        public string? id_nguoilap { get; set; }
+        public string? ten_nguoilap { get; set; }
+        public bool? duyetphieu { get; set; }
+        public DateTime? ngayduyet { get; set; }
+        public int? id_BA_Phuctap { get; set; }
+        public string? chiphi_taikham { get; set; }
     }
 
     public class MigrationResult
