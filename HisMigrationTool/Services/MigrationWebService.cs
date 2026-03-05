@@ -293,261 +293,312 @@ namespace HisMigrationTool.Services
             onProgress?.Invoke("Đang mở kết nối tới hệ thống HIS Mới...");
             await connection.OpenAsync();
 
-            // =========================================================================
-            // BƯỚC KIỂM TRA VALIDATION: Bệnh nhân đã được đồng bộ trước đó chưa?
-            // =========================================================================
-            onProgress?.Invoke(">> Đang kiểm tra lịch sử đồng bộ trên hệ thống mới...");
-            string checkExistSql = @"
-                SELECT COUNT(1) 
-                FROM BV_Tiepnhan 
-                WHERE id_Benhnhan = @id_Benhnhan 
-                  AND Sonhapvien = @Sonhapvien";
-
-            int existCount = await connection.ExecuteScalarAsync<int>(checkExistSql, new
-            {
-                id_Benhnhan = data.TiepNhan.id_Benhnhan,
-                Sonhapvien = data.TiepNhan.Sonhapvien
-            });
-
-            if (existCount > 0)
-            {
-                string warningMsg = $"Bệnh nhân có Mã BN: {data.TiepNhan.id_Benhnhan} và Số nhập viện: {data.TiepNhan.Sonhapvien} đã được đồng bộ trước đó. Giao dịch bị hủy bỏ để tránh trùng lặp dữ liệu!";
-                onProgress?.Invoke($"⚠ CẢNH BÁO: {warningMsg}");
-
-                return new MigrationResult { IsSuccess = false, Message = warningMsg };
-            }
-            // =========================================================================
-
             using var transaction = connection.BeginTransaction();
 
             try
             {
-                // BƯỚC 1: INSERT TIẾP NHẬN
-                onProgress?.Invoke(">> Bắt đầu cập nhật bảng [BV_Tiepnhan]...");
-                string sqlInsertTiepNhan = @"
-                    INSERT INTO BV_Tiepnhan (
-                        id_DMDoituong, id_Nhanvien, id_Benhnhan, Hoten, Ten, Ngaythangnamsinh, Namsinh, 
-                        Gioitinh, Diachidaydu, Phanloaikham, Trangthai, Dathuphi, id_Quaytiepnhan, 
-                        Noitru, id_Hosonoitru, Ngoaitru, Sonhapvien, Ngaygiotiepnhan, id_Voucher, 
-                        id_TKTamung, Tamung, DuyetBHYT, Tiepnhantunoitru, Lydomienphi, Thuephong, 
-                        BNThammy, id_benhnhanTK, id_SttBenhnhanBD, Songaydieutri_ngoaitru, Tuoi, 
-                        Dienthoai, KoKiemtraGiamdinh, id_DMGoi, id_ChiNhanh, NgaygioThu, Mathe, 
-                        Yeucau_BS, SudungBHBL, Khuvuc, Xuatvien, XV_Trangthai, Diachidaydu_Noitru, 
-                        id_KhoaPhongTN, VIP, DaCheckin, Checkin_Noitru
-                    )
-                    VALUES (
-                        @id_DMDoituong, @id_Nhanvien, @id_Benhnhan, @Hoten, @Ten, @Ngaythangnamsinh, @Namsinh, 
-                        @Gioitinh, @Diachidaydu, @Phanloaikham, @Trangthai, @Dathuphi, @id_Quaytiepnhan, 
-                        @Noitru, @id_Hosonoitru, @Ngoaitru, @Sonhapvien, @Ngaygiotiepnhan, @id_Voucher, 
-                        @id_TKTamung, @Tamung, @DuyetBHYT, @Tiepnhantunoitru, @Lydomienphi, @Thuephong, 
-                        @BNThammy, @id_benhnhanTK, @id_SttBenhnhanBD, @Songaydieutri_ngoaitru, @Tuoi, 
-                        @Dienthoai, @KoKiemtraGiamdinh, @id_DMGoi, @id_ChiNhanh, @NgaygioThu, @Mathe, 
-                        @Yeucau_BS, @SudungBHBL, @Khuvuc, @Xuatvien, @XV_Trangthai, @Diachidaydu_Noitru, 
-                        @id_KhoaPhongTN, @VIP, @DaCheckin, @Checkin_Noitru
-                    );
-                    SELECT CAST(SCOPE_IDENTITY() as int);";
+                int tiepNhanId = 0;
 
-                int newTiepNhanId = await connection.QuerySingleAsync<int>(sqlInsertTiepNhan, data.TiepNhan, transaction);
-                onProgress?.Invoke($"   -> Tạo thành công ID Tiếp nhận mới: {newTiepNhanId}");
+                // =========================================================================
+                // BƯỚC 1: KIỂM TRA & CẬP NHẬT TIẾP NHẬN
+                // =========================================================================
+                onProgress?.Invoke(">> Đang kiểm tra bảng [BV_Tiepnhan]...");
+                string checkTiepNhanSql = @"
+                    SELECT TOP 1 id_Tiepnhan 
+                    FROM BV_Tiepnhan 
+                    WHERE id_Benhnhan = @id_Benhnhan 
+                    AND Sonhapvien = @Sonhapvien";
 
-                // BƯỚC 2: INSERT CÁC BẢN CON CỦA TIẾP NHẬN
-                onProgress?.Invoke(">> Bắt đầu cập nhật các bảng liên quan: Địa chỉ, Lưu trú, Thuộc tính...");
-                await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan) VALUES (@id_Tiepnhan);", new { id_Tiepnhan = newTiepNhanId }, transaction);
-                await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Luutru (id_Tiepnhan) VALUES (@id_Tiepnhan);", new { id_Tiepnhan = newTiepNhanId }, transaction);
-                await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan) VALUES (@id_Tiepnhan);", new { id_Tiepnhan = newTiepNhanId }, transaction);
-
-                // BƯỚC 3: INSERT SỐ VÀO VIỆN
-                onProgress?.Invoke(">> Đang cập nhật Sổ nhập viện [BV_Sonhapvien]...");
-                string sqlInsertSoNhaoVien = @"
-                    INSERT INTO BV_Sonhapvien (Maso, Namluutru, Sohientai, Trangthai, Ngaygiocap, id_Nhanvien, id_Khoaphong, id_Tiepnhan) 
-                    VALUES (@Maso, 2026, @Sohientai, N'Sử_dụng', @Ngaygio, @Nhanvien, N'NT_CAPCUU', @id_Tiepnhan);";
-
-                await connection.ExecuteAsync(sqlInsertSoNhaoVien, new
+                var existingTiepNhanId = await connection.QueryFirstOrDefaultAsync<int?>(checkTiepNhanSql, new
                 {
-                    Maso = data.TiepNhan.Sonhapvien,
-                    Sohientai = Convert.ToInt32(data.TiepNhan.Sonhapvien),
-                    Ngaygio = data.TiepNhan.Ngaygiotiepnhan,
-                    Nhanvien = data.TiepNhan.id_Nhanvien,
-                    id_Tiepnhan = newTiepNhanId
+                    id_Benhnhan = data.TiepNhan.id_Benhnhan,
+                    Sonhapvien = data.TiepNhan.Sonhapvien
                 }, transaction);
 
-                // BƯỚC 4: INSERT PHIẾU CHỈ ĐỊNH VÀO VIỆN
-                onProgress?.Invoke(">> Đang cập nhật Phiếu chỉ định vào viện [BV_Phieuchidinhvaovien]...");
-                data.PhieuChiDinh.id_Tiepnhan = newTiepNhanId;
+                if (existingTiepNhanId.HasValue && existingTiepNhanId.Value > 0)
+                {
+                    tiepNhanId = existingTiepNhanId.Value;
+                    onProgress?.Invoke($"   -> Bệnh nhân đã có Tiếp nhận (ID: {tiepNhanId}). Bỏ qua Insert Tiếp nhận.");
+                }
+                else
+                {
+                    string sqlInsertTiepNhan = @"
+                INSERT INTO BV_Tiepnhan (
+                    id_DMDoituong, id_Nhanvien, id_Benhnhan, Hoten, Ten, Ngaythangnamsinh, Namsinh, 
+                    Gioitinh, Diachidaydu, Phanloaikham, Trangthai, Dathuphi, id_Quaytiepnhan, 
+                    Noitru, id_Hosonoitru, Ngoaitru, Sonhapvien, Ngaygiotiepnhan, id_Voucher, 
+                    id_TKTamung, Tamung, DuyetBHYT, Tiepnhantunoitru, Lydomienphi, Thuephong, 
+                    BNThammy, id_benhnhanTK, id_SttBenhnhanBD, Songaydieutri_ngoaitru, Tuoi, 
+                    Dienthoai, KoKiemtraGiamdinh, id_DMGoi, id_ChiNhanh, NgaygioThu, Mathe, 
+                    Yeucau_BS, SudungBHBL, Khuvuc, Xuatvien, XV_Trangthai, Diachidaydu_Noitru, 
+                    id_KhoaPhongTN, VIP, DaCheckin, Checkin_Noitru
+                )
+                VALUES (
+                    @id_DMDoituong, @id_Nhanvien, @id_Benhnhan, @Hoten, @Ten, @Ngaythangnamsinh, @Namsinh, 
+                    @Gioitinh, @Diachidaydu, @Phanloaikham, @Trangthai, @Dathuphi, @id_Quaytiepnhan, 
+                    @Noitru, @id_Hosonoitru, @Ngoaitru, @Sonhapvien, @Ngaygiotiepnhan, @id_Voucher, 
+                    @id_TKTamung, @Tamung, @DuyetBHYT, @Tiepnhantunoitru, @Lydomienphi, @Thuephong, 
+                    @BNThammy, @id_benhnhanTK, @id_SttBenhnhanBD, @Songaydieutri_ngoaitru, @Tuoi, 
+                    @Dienthoai, @KoKiemtraGiamdinh, @id_DMGoi, @id_ChiNhanh, @NgaygioThu, @Mathe, 
+                    @Yeucau_BS, @SudungBHBL, @Khuvuc, @Xuatvien, @XV_Trangthai, @Diachidaydu_Noitru, 
+                    @id_KhoaPhongTN, @VIP, @DaCheckin, @Checkin_Noitru
+                );
+                SELECT CAST(SCOPE_IDENTITY() as int);";
 
-                if (data.PhieuChiDinh.Ngaygio is DateTime dt)
-                    data.PhieuChiDinh.Ngaygiodaydu = $"Vào lúc {dt.Hour} giờ {dt.Minute} phút, ngày {dt:dd} tháng {dt:MM} năm {dt:yyyy}";
+                    tiepNhanId = await connection.QuerySingleAsync<int>(sqlInsertTiepNhan, data.TiepNhan, transaction);
+                    onProgress?.Invoke($"   -> Tạo thành công ID Tiếp nhận mới: {tiepNhanId}");
 
-                string sqlInsertPhieu = @"
-                    INSERT INTO BV_Phieuchidinhvaovien (
-                        Sonhapvien, Namluutru, id_Tiepnhan, id_Benhan_Phanloai, Ten_PhanloaiBA, id_Benhnhan, 
-                        Lienhe_hoten, Lienhe_diachi, Lienhe_sodienthoai, id_Bacsi_Lambenhan, Hoten_Bacsi_Lambenhan, 
-                        id_Nhanvien, Hoten_Nhanvien, id_DMPhongkham, Ten_Phongkham, Ngaygio, Ngaygiodaydu, 
-                        Quatrinhbenhly, Tiensubenh_Banthan, Tiensubenh_Giadinh, Toanthan, Cacbophan, KQ_Canlamsang, 
-                        Daxuly, Chuy, Chovaodieutritaikhoa, id_Khoadieutri, ICD_Chandoannoichuyenden, 
-                        Chandoannoichuyenden, ICD_ChandoanKKB_CC, ChandoanKKB_CC, Lydovaovien, Para, 
-                        Tiensusanphukhoa, Khamchuyenkhoa, Lienhe_Namsinh, Lienhe_Quanhe, Tinhtrang_BHYT, 
-                        BN_KygiayBHYT, Danhgia_Tutu
-                    ) 
-                    VALUES (
-                        @Sonhapvien, @Namluutru, @id_Tiepnhan, @id_Benhan_Phanloai, @Ten_PhanloaiBA, @id_Benhnhan, 
-                        @Lienhe_hoten, @Lienhe_diachi, @Lienhe_sodienthoai, @id_Bacsi_Lambenhan, @Hoten_Bacsi_Lambenhan, 
-                        @id_Nhanvien, @Hoten_Nhanvien, @id_DMPhongkham, @Ten_Phongkham, @Ngaygio, @Ngaygiodaydu, 
-                        @Quatrinhbenhly, @Tiensubenh_Banthan, @Tiensubenh_Giadinh, @Toanthan, @Cacbophan, @KQ_Canlamsang, 
-                        @Daxuly, @Chuy, @Chovaodieutritaikhoa, @id_Khoadieutri, @ICD_Chandoannoichuyenden, 
-                        @Chandoannoichuyenden, @ICD_ChandoanKKB_CC, @ChandoanKKB_CC, @Lydovaovien, @Para, 
-                        @Tiensusanphukhoa, @Khamchuyenkhoa, @Lienhe_Namsinh, @Lienhe_Quanhe, @Tinhtrang_BHYT, 
-                        @BN_KygiayBHYT, @Danhgia_Tutu
+                    // BƯỚC 2: INSERT CÁC BẢN CON CỦA TIẾP NHẬN (Chỉ làm khi Tiếp nhận tạo mới)
+                    onProgress?.Invoke(">> Đang cập nhật các bảng phụ (Địa chỉ, Lưu trú, Thuộc tính)...");
+                    await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Diachi (id_Tiepnhan) VALUES (@id_Tiepnhan);", new { id_Tiepnhan = tiepNhanId }, transaction);
+                    await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Luutru (id_Tiepnhan) VALUES (@id_Tiepnhan);", new { id_Tiepnhan = tiepNhanId }, transaction);
+                    await connection.ExecuteAsync("INSERT INTO BV_Tiepnhan_Thuoctinh (id_Tiepnhan) VALUES (@id_Tiepnhan);", new { id_Tiepnhan = tiepNhanId }, transaction);
+                }
+
+                // =========================================================================
+                // BƯỚC 3: KIỂM TRA & INSERT SỐ VÀO VIỆN
+                // =========================================================================
+                onProgress?.Invoke(">> Kiểm tra Sổ nhập viện [BV_Sonhapvien]...");
+                int existsSoNhapVien = await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM BV_Sonhapvien WHERE id_Tiepnhan = @id", new { id = tiepNhanId }, transaction);
+                if (existsSoNhapVien == 0)
+                {
+                    string sqlInsertSoNhaoVien = @"
+                INSERT INTO BV_Sonhapvien (Maso, Namluutru, Sohientai, Trangthai, Ngaygiocap, id_Nhanvien, id_Khoaphong, id_Tiepnhan) 
+                VALUES (@Maso, 2026, @Sohientai, N'Sử_dụng', @Ngaygio, @Nhanvien, N'NT_CAPCUU', @id_Tiepnhan);";
+
+                    await connection.ExecuteAsync(sqlInsertSoNhaoVien, new
+                    {
+                        Maso = data.TiepNhan.Sonhapvien,
+                        Sohientai = Convert.ToInt32(data.TiepNhan.Sonhapvien),
+                        Ngaygio = data.TiepNhan.Ngaygiotiepnhan,
+                        Nhanvien = data.TiepNhan.id_Nhanvien,
+                        id_Tiepnhan = tiepNhanId
+                    }, transaction);
+                }
+                else { onProgress?.Invoke("   -> Dữ liệu đã tồn tại, bỏ qua."); }
+
+                // =========================================================================
+                // BƯỚC 4: KIỂM TRA & INSERT PHIẾU CHỈ ĐỊNH VÀO VIỆN
+                // =========================================================================
+                onProgress?.Invoke(">> Kiểm tra Phiếu chỉ định vào viện [BV_Phieuchidinhvaovien]...");
+                int phieuId = 0;
+                var existingPhieuId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT TOP 1 id_Phieuchidinhvaovien FROM BV_Phieuchidinhvaovien WHERE id_Tiepnhan = @id",
+                    new { id = tiepNhanId }, transaction);
+
+                if (existingPhieuId.HasValue && existingPhieuId.Value > 0)
+                {
+                    phieuId = existingPhieuId.Value;
+                    onProgress?.Invoke($"   -> Đã tồn tại (ID Phiếu: {phieuId}), bỏ qua.");
+                }
+                else
+                {
+                    data.PhieuChiDinh.id_Tiepnhan = tiepNhanId;
+                    if (data.PhieuChiDinh.Ngaygio is DateTime dt)
+                        data.PhieuChiDinh.Ngaygiodaydu = $"Vào lúc {dt.Hour} giờ {dt.Minute} phút, ngày {dt:dd} tháng {dt:MM} năm {dt:yyyy}";
+
+                    string sqlInsertPhieu = @"
+                INSERT INTO BV_Phieuchidinhvaovien (
+                    Sonhapvien, Namluutru, id_Tiepnhan, id_Benhan_Phanloai, Ten_PhanloaiBA, id_Benhnhan, 
+                    Lienhe_hoten, Lienhe_diachi, Lienhe_sodienthoai, id_Bacsi_Lambenhan, Hoten_Bacsi_Lambenhan, 
+                    id_Nhanvien, Hoten_Nhanvien, id_DMPhongkham, Ten_Phongkham, Ngaygio, Ngaygiodaydu, 
+                    Quatrinhbenhly, Tiensubenh_Banthan, Tiensubenh_Giadinh, Toanthan, Cacbophan, KQ_Canlamsang, 
+                    Daxuly, Chuy, Chovaodieutritaikhoa, id_Khoadieutri, ICD_Chandoannoichuyenden, 
+                    Chandoannoichuyenden, ICD_ChandoanKKB_CC, ChandoanKKB_CC, Lydovaovien, Para, 
+                    Tiensusanphukhoa, Khamchuyenkhoa, Lienhe_Namsinh, Lienhe_Quanhe, Tinhtrang_BHYT, 
+                    BN_KygiayBHYT, Danhgia_Tutu
+                ) 
+                VALUES (
+                    @Sonhapvien, @Namluutru, @id_Tiepnhan, @id_Benhan_Phanloai, @Ten_PhanloaiBA, @id_Benhnhan, 
+                    @Lienhe_hoten, @Lienhe_diachi, @Lienhe_sodienthoai, @id_Bacsi_Lambenhan, @Hoten_Bacsi_Lambenhan, 
+                    @id_Nhanvien, @Hoten_Nhanvien, @id_DMPhongkham, @Ten_Phongkham, @Ngaygio, @Ngaygiodaydu, 
+                    @Quatrinhbenhly, @Tiensubenh_Banthan, @Tiensubenh_Giadinh, @Toanthan, @Cacbophan, @KQ_Canlamsang, 
+                    @Daxuly, @Chuy, @Chovaodieutritaikhoa, @id_Khoadieutri, @ICD_Chandoannoichuyenden, 
+                    @Chandoannoichuyenden, @ICD_ChandoanKKB_CC, @ChandoanKKB_CC, @Lydovaovien, @Para, 
+                    @Tiensusanphukhoa, @Khamchuyenkhoa, @Lienhe_Namsinh, @Lienhe_Quanhe, @Tinhtrang_BHYT, 
+                    @BN_KygiayBHYT, @Danhgia_Tutu
+                );
+                SELECT CAST(SCOPE_IDENTITY() as int);";
+
+                    phieuId = await connection.QuerySingleAsync<int>(sqlInsertPhieu, data.PhieuChiDinh, transaction);
+                }
+
+                // =========================================================================
+                // BƯỚC 5: KIỂM TRA & INSERT BỆNH NHÂN TẠI KHOA
+                // =========================================================================
+                onProgress?.Invoke(">> Kiểm tra Bệnh nhân tại khoa [BV_Noitru_Benhnhantaikhoa]...");
+                int existsTaiKhoa = await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM BV_Noitru_Benhnhantaikhoa WHERE id_Tiepnhan = @id", new { id = tiepNhanId }, transaction);
+                if (existsTaiKhoa == 0)
+                {
+                    data.BenhNhanTaiKhoa.id_Tiepnhan = tiepNhanId;
+                    data.BenhNhanTaiKhoa.id_Khoa = data.PhieuChiDinh.id_Khoadieutri;
+                    data.BenhNhanTaiKhoa.Tenkhoa = data.PhieuChiDinh.Chovaodieutritaikhoa;
+
+                    string sqlInsertTaiKhoa = @"
+                INSERT INTO BV_Noitru_Benhnhantaikhoa (
+                    id_Khoa, Tenkhoa, Ngaygio, Sonhapvien, id_Benhnhan, Hoten, Ngaythangnamsinh, Namsinh, Tuoi, Gioitinh, Trangthai, 
+                    id_Nhanvienget, Hoten_Nhanvienget, NamNhapvien, id_Tiepnhan, id_KhoaChuyenden, KhoaChuyenden, Ngaygio_Chuyen, Giochuyenmo, 
+                    Xutri, Hientai, Bacsi_Truc, YeucauThuho
+                ) VALUES (
+                    @id_Khoa, @Tenkhoa, @Ngaygio, @Sonhapvien, @id_Benhnhan, @Hoten, @Ngaythangnamsinh, @Namsinh, @Tuoi, @Gioitinh, @Trangthai, 
+                    @id_Nhanvienget, @Hoten_Nhanvienget, @NamNhapvien, @id_Tiepnhan, @id_KhoaChuyenden, @KhoaChuyenden, @Ngaygio_Chuyen, @Giochuyenmo, 
+                    @Xutri, @Hientai, @Bacsi_Truc, @YeucauThuho
+                )";
+                    await connection.ExecuteAsync(sqlInsertTaiKhoa, data.BenhNhanTaiKhoa, transaction);
+                }
+                else { onProgress?.Invoke("   -> Dữ liệu đã tồn tại, bỏ qua."); }
+
+                // =========================================================================
+                // BƯỚC 6: KIỂM TRA & INSERT BỆNH ÁN NGOẠI TRÚ
+                // =========================================================================
+                if (!string.IsNullOrEmpty(data.BenhAnNgoaiTru.id_Benhnhan))
+                {
+                    onProgress?.Invoke(">> Kiểm tra Bệnh án Ngoại trú [BV_BenhAn_Ngoaitru]...");
+                    int existsNgoaiTru = await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM BV_BenhAn_Ngoaitru WHERE id_Tiepnhan = @id", new { id = tiepNhanId }, transaction);
+                    if (existsNgoaiTru == 0)
+                    {
+                        data.BenhAnNgoaiTru.id_Tiepnhan = tiepNhanId;
+
+                        if (data.BenhAnNgoaiTru.Ngaygio is DateTime dtNgoaitru)
+                            data.BenhAnNgoaiTru.Ngaygiokhamdaydu = $"Khám lúc {dtNgoaitru.Hour} giờ {dtNgoaitru.Minute} phút, ngày {dtNgoaitru:dd} tháng {dtNgoaitru:MM} năm {dtNgoaitru:yyyy}";
+
+                        string sqlInsertBaNgoaitru = @"
+                    INSERT INTO BV_BenhAn_Ngoaitru (
+                        STT_Sokhambenh, id_Benhan_Phanloai_Khambenh, Namluutru, id_Hosonoitru, id_Benhnhan, id_Tiepnhan, id_DMDoituong, id_Bacsi, Hoten_Bacsi, 
+                        Ngaygio, Ngaygiokhamdaydu, id_DuyetBHYT, id_DMPhongkham, Ten_Khoaphong, Quatrinhbenhly, Tiensubenh_Banthan, Tiensubenh_Giadinh, Cacbophan, 
+                        Lydovaovien, KQ_Canlamsang, id_ICD_Chandoan, Chandoan, Denghi, Xutri, Ngaytaikham, Dientienbenh, Toanthan, MasoChungchi, dmdc_Id_Khoa, 
+                        dmdc_Ten_Khoa, id_Lanmangthai, Chidinhdichvu, Chidinhdieutri, Toathuoc, Ketluan, id_Benhnhanphongkham, Dieutri_Tungay, Dieutri_Denngay, 
+                        Phuongphap_Dieutri, Tinhtrang_Ravien, Loai_BenhAn, Phanloai_Capcuu, Phanloai_Ravien, Huongdieutri, QuenSo, Danhgia_tenga, Benh_phuctap, 
+                        Danhgia_tutu, id_nguoilap, ten_nguoilap, duyetphieu, ngayduyet, id_BA_Phuctap, chiphi_taikham
+                    ) VALUES (
+                        @STT_Sokhambenh, @id_Benhan_Phanloai_Khambenh, @Namluutru, @id_Hosonoitru, @id_Benhnhan, @id_Tiepnhan, @id_DMDoituong, @id_Bacsi, @Hoten_Bacsi, 
+                        @Ngaygio, @Ngaygiokhamdaydu, @id_DuyetBHYT, @id_DMPhongkham, @Ten_Khoaphong, @Quatrinhbenhly, @Tiensubenh_Banthan, @Tiensubenh_Giadinh, @Cacbophan, 
+                        @Lydovaovien, @KQ_Canlamsang, @id_ICD_Chandoan, @Chandoan, @Denghi, @Xutri, @Ngaytaikham, @Dientienbenh, @Toanthan, @MasoChungchi, @dmdc_Id_Khoa, 
+                        @dmdc_Ten_Khoa, @id_Lanmangthai, @Chidinhdichvu, @Chidinhdieutri, @Toathuoc, @Ketluan, @id_Benhnhanphongkham, @Dieutri_Tungay, @Dieutri_Denngay, 
+                        @Phuongphap_Dieutri, @Tinhtrang_Ravien, @Loai_BenhAn, @Phanloai_Capcuu, @Phanloai_Ravien, @Huongdieutri, @QuenSo, @Danhgia_tenga, @Benh_phuctap, 
+                        @Danhgia_tutu, @id_nguoilap, @ten_nguoilap, @duyetphieu, @ngayduyet, @id_BA_Phuctap, @chiphi_taikham
+                    )";
+                        await connection.ExecuteAsync(sqlInsertBaNgoaitru, data.BenhAnNgoaiTru, transaction);
+                    }
+                    else { onProgress?.Invoke("   -> Dữ liệu đã tồn tại, bỏ qua."); }
+                }
+
+                // =========================================================================
+                // BƯỚC 7: KIỂM TRA & INSERT HỒ SƠ NỘI TRÚ 
+                // =========================================================================
+                int hoSoNoiTruId = 0;
+                if (!string.IsNullOrEmpty(data.HoSoNoiTru.id_Benhnhan))
+                {
+                    onProgress?.Invoke(">> Kiểm tra Hồ sơ nội trú [BV_Hosonoitru]...");
+                    var existingHoSoId = await connection.QueryFirstOrDefaultAsync<int?>(
+                        "SELECT TOP 1 id_Hosonoitru FROM BV_Hosonoitru WHERE id_Tiepnhan = @id",
+                        new { id = tiepNhanId }, transaction);
+
+                    if (existingHoSoId.HasValue && existingHoSoId.Value > 0)
+                    {
+                        hoSoNoiTruId = existingHoSoId.Value;
+                        onProgress?.Invoke($"   -> Đã tồn tại (ID Hồ Sơ: {hoSoNoiTruId}), bỏ qua.");
+                    }
+                    else
+                    {
+                        data.HoSoNoiTru.id_Tiepnhan = tiepNhanId;
+                        data.HoSoNoiTru.id_Phieuchidinhvaovien = phieuId;
+
+                        if (data.HoSoNoiTru.Ngaygio is DateTime dtHsnt)
+                            data.HoSoNoiTru.Ngaygiodaydu = $"Vào lúc {dtHsnt.Hour} giờ {dtHsnt.Minute} phút, ngày {dtHsnt:dd} tháng {dtHsnt:MM} năm {dtHsnt:yyyy}";
+
+                        if (data.HoSoNoiTru.Vaovien_Ngaygiovaovien is DateTime dtVaovien)
+                            data.HoSoNoiTru.Vaovien_Ngaygiovaoviendaydu = $"Vào lúc {dtVaovien.Hour} giờ {dtVaovien.Minute} phút, ngày {dtVaovien:dd} tháng {dtVaovien:MM} năm {dtVaovien:yyyy}";
+
+                        if (data.HoSoNoiTru.Vaokhoa_Ngaygiovaokhoa is DateTime dtVaokhoa)
+                            data.HoSoNoiTru.Vaokhoa_Ngaygiovaokhoadaydu = $"Vào lúc {dtVaokhoa.Hour} giờ {dtVaokhoa.Minute} phút, ngày {dtVaokhoa:dd} tháng {dtVaokhoa:MM} năm {dtVaokhoa:yyyy}";
+
+                        string sqlInsertHoSoNoiTru = @"
+                    INSERT INTO BV_Hosonoitru (
+                        id_Phieuchidinhvaovien, Soluutru, Sonhapvien, Namluutru, Mayte, id_Tiepnhan, id_Benhan_Phanloai, Ten_PhanloaiBA, id_Benhnhan, Hoten, Ngaythangnamsinh, Namsinh, Tuoi, Gioitinh, Dienthoaididong, id_DMQuoctich, Quoctich, id_DMNghenghiep, Nghenghiep, id_DMDantoc, Dantoc, Tamtru_diachi, Tamtru_xaphuong, Tamtru_idXaphuong, Tamtru_quanhuyen, Tamtru_idQuanhuyen, Tamtru_tinhthanh, Tamtru_idTinhthanh, Noilamviec, id_DMDoituong, Doituong, id_DuyetBHYT, SotheBHYT, DuyetBHYT, NgayhethanBHYT, DiachiBHYT, Lienhe_hoten, Lienhe_diachi, Lienhe_sodienthoai, id_Bacsi_Lambenhan, Hoten_Bacsi_Lambenhan, id_Nhanvien, Hoten_Nhanvien, id_DMPhongkham, Ten_Phongkham, Ngaygio, Ngaygiodaydu, Vaovien_Ngaygiovaovien, Vaovien_Ngaygiovaoviendaydu, Tructiepvao, Noigioithieu, Vaoviendobenhnaylanthu, Vaokhoa, Vaokhoa_idKhoaphong, Vaokhoa_Ngaygiovaokhoa, Vaokhoa_Ngaygiovaokhoadaydu, Vaokhoa_Songaydieutri, Chuyenden, Chuyenvien, Ravien_Ngaygioravien, Ravien_Ngaygioraviendaydu, Ravien_Phanloai, Tongsongaydieutri, Chandoan_khivaokhoadieutri, ICD_Chandoan_khivaokhoadieutri, Chandoan_Lucvaokhoa_Lydo, Chandoan_Lucvaokhoa_Phanloai, ICD_Chandoannoichuyenden, Chandoannoichuyenden, ICD_ChandoanKKB_CC, ChandoanKKB_CC, Chandoan_Lucvaode, ICD_Chandoan_Lucvaode, Chandoan_phauthuatsausinh, Chandoan_thuthuatsausinh, Chandoan_taibien, Chandoan_bienchung, Chandoan_Ravien_Benhchinh, ICD_Chandoan_Ravien_Benhchinh, Chandoan_Ravien_Benhkemtheo, ICD_Chandoan_Ravien_Benhkemtheo, Ngayde_Mode, Ngoithai, Cachthucde, Cachthucde_Bienchung, Cachthucde_Kiemsoattucung, Cachthucde_Taibien, Cachthucde_TB_BC_Dogayme, Cachthucde_TB_BC_Dokhac, Cachthucde_TB_BC_Donhiemkhuan, Cachthucde_TB_BC_Dophauthuat, Tinhhinhphauthuat, Chandoan_Sauphauthuat, ICD_Chandoan_Sauphauthuat, Chandoan_Truocphauthuat, ICD_Chandoan_Truocphauthuat, Phuongphapphauthuat, Tongsongaydieutri_Sauphauthuat, Tongsolanphauthuat, Ketquadieutri, Giaiphaubenh, Tinhhinhtuvong_Ngay, Tinhhinhtuvong_phanloai, Tinhhinhtuvong_Lydo, Tinhhinhtuvong_Trong24giovaovien, Tinhhinhtuvong_Ngoai24giovaovien, Tinhhinhtuvong_Sau24giovaovien, Nguyennhanchinhtuvong, ICD_Nguyennhanchinhtuvong, Khamnghiemtuthi, ICD_Chandoangiaiphaututhi, Chandoangiaiphaututhi, Khivaokhoadieutri_TB_BC_Dogayme, Khivaokhoadieutri_TB_BC_Dokhac, Khivaokhoadieutri_TB_BC_Donhiemkhuan, Khivaokhoadieutri_TB_BC_Dophauthuat, Xuatvien, Ten_Khoahienhanh, id_Khoahienhanh, id_Giuongbenh, Tengiuongbenh, Dathanhtoanvienphi, id_Toaxuatvien, id_Taikham, Ngayhentaikham, Hosophu, Id_Me, Cohosophu, id_Khoaxuatvien, Tenkhoaxuatvien, KhongsudungDV, dmdc_Id_Khoa, Cannang, KhoaXuly, id_NVKhoaXuly, Danhan_HSBA, Thoigiannhan_HSBA
+                    ) VALUES (
+                        @id_Phieuchidinhvaovien, @Soluutru, @Sonhapvien, @Namluutru, @Mayte, @id_Tiepnhan, @id_Benhan_Phanloai, @Ten_PhanloaiBA, @id_Benhnhan, @Hoten, @Ngaythangnamsinh, @Namsinh, @Tuoi, @Gioitinh, @Dienthoaididong, @id_DMQuoctich, @Quoctich, @id_DMNghenghiep, @Nghenghiep, @id_DMDantoc, @Dantoc, @Tamtru_diachi, @Tamtru_xaphuong, @Tamtru_idXaphuong, @Tamtru_quanhuyen, @Tamtru_idQuanhuyen, @Tamtru_tinhthanh, @Tamtru_idTinhthanh, @Noilamviec, @id_DMDoituong, @Doituong, @id_DuyetBHYT, @SotheBHYT, @DuyetBHYT, @NgayhethanBHYT, @DiachiBHYT, @Lienhe_hoten, @Lienhe_diachi, @Lienhe_sodienthoai, @id_Bacsi_Lambenhan, @Hoten_Bacsi_Lambenhan, @id_Nhanvien, @Hoten_Nhanvien, @id_DMPhongkham, @Ten_Phongkham, @Ngaygio, @Ngaygiodaydu, @Vaovien_Ngaygiovaovien, @Vaovien_Ngaygiovaoviendaydu, @Tructiepvao, @Noigioithieu, @Vaoviendobenhnaylanthu, @Vaokhoa, @Vaokhoa_idKhoaphong, @Vaokhoa_Ngaygiovaokhoa, @Vaokhoa_Ngaygiovaokhoadaydu, @Vaokhoa_Songaydieutri, @Chuyenden, @Chuyenvien, @Ravien_Ngaygioravien, @Ravien_Ngaygioraviendaydu, @Ravien_Phanloai, @Tongsongaydieutri, @Chandoan_khivaokhoadieutri, @ICD_Chandoan_khivaokhoadieutri, @Chandoan_Lucvaokhoa_Lydo, @Chandoan_Lucvaokhoa_Phanloai, @ICD_Chandoannoichuyenden, @Chandoannoichuyenden, @ICD_ChandoanKKB_CC, @ChandoanKKB_CC, @Chandoan_Lucvaode, @ICD_Chandoan_Lucvaode, @Chandoan_phauthuatsausinh, @Chandoan_thuthuatsausinh, @Chandoan_taibien, @Chandoan_bienchung, @Chandoan_Ravien_Benhchinh, @ICD_Chandoan_Ravien_Benhchinh, @Chandoan_Ravien_Benhkemtheo, @ICD_Chandoan_Ravien_Benhkemtheo, @Ngayde_Mode, @Ngoithai, @Cachthucde, @Cachthucde_Bienchung, @Cachthucde_Kiemsoattucung, @Cachthucde_Taibien, @Cachthucde_TB_BC_Dogayme, @Cachthucde_TB_BC_Dokhac, @Cachthucde_TB_BC_Donhiemkhuan, @Cachthucde_TB_BC_Dophauthuat, @Tinhhinhphauthuat, @Chandoan_Sauphauthuat, @ICD_Chandoan_Sauphauthuat, @Chandoan_Truocphauthuat, @ICD_Chandoan_Truocphauthuat, @Phuongphapphauthuat, @Tongsongaydieutri_Sauphauthuat, @Tongsolanphauthuat, @Ketquadieutri, @Giaiphaubenh, @Tinhhinhtuvong_Ngay, @Tinhhinhtuvong_phanloai, @Tinhhinhtuvong_Lydo, @Tinhhinhtuvong_Trong24giovaovien, @Tinhhinhtuvong_Ngoai24giovaovien, @Tinhhinhtuvong_Sau24giovaovien, @Nguyennhanchinhtuvong, @ICD_Nguyennhanchinhtuvong, @Khamnghiemtuthi, @ICD_Chandoangiaiphaututhi, @Chandoangiaiphaututhi, @Khivaokhoadieutri_TB_BC_Dogayme, @Khivaokhoadieutri_TB_BC_Dokhac, @Khivaokhoadieutri_TB_BC_Donhiemkhuan, @Khivaokhoadieutri_TB_BC_Dophauthuat, @Xuatvien, @Ten_Khoahienhanh, @id_Khoahienhanh, @id_Giuongbenh, @Tengiuongbenh, @Dathanhtoanvienphi, @id_Toaxuatvien, @id_Taikham, @Ngayhentaikham, @Hosophu, @Id_Me, @Cohosophu, @id_Khoaxuatvien, @Tenkhoaxuatvien, @KhongsudungDV, @dmdc_Id_Khoa, @Cannang, @KhoaXuly, @id_NVKhoaXuly, @Danhan_HSBA, @Thoigiannhan_HSBA
                     );
                     SELECT CAST(SCOPE_IDENTITY() as int);";
 
-                int newPhieuId = await connection.QuerySingleAsync<int>(sqlInsertPhieu, data.PhieuChiDinh, transaction);
-
-                // BƯỚC 5: INSERT BỆNH NHÂN TẠI KHOA
-                onProgress?.Invoke(">> Đang cập nhật Bệnh nhân tại khoa [BV_Noitru_Benhnhantaikhoa]...");
-                data.BenhNhanTaiKhoa.id_Tiepnhan = newTiepNhanId;
-                data.BenhNhanTaiKhoa.id_Khoa = data.PhieuChiDinh.id_Khoadieutri;
-                data.BenhNhanTaiKhoa.Tenkhoa = data.PhieuChiDinh.Chovaodieutritaikhoa;
-
-                string sqlInsertTaiKhoa = @"
-                    INSERT INTO BV_Noitru_Benhnhantaikhoa (
-                        id_Khoa, Tenkhoa, Ngaygio, Sonhapvien, id_Benhnhan, Hoten, Ngaythangnamsinh, Namsinh, Tuoi, Gioitinh, Trangthai, 
-                        id_Nhanvienget, Hoten_Nhanvienget, NamNhapvien, id_Tiepnhan, id_KhoaChuyenden, KhoaChuyenden, Ngaygio_Chuyen, Giochuyenmo, 
-                        Xutri, Hientai, Bacsi_Truc, YeucauThuho
-                    ) VALUES (
-                        @id_Khoa, @Tenkhoa, @Ngaygio, @Sonhapvien, @id_Benhnhan, @Hoten, @Ngaythangnamsinh, @Namsinh, @Tuoi, @Gioitinh, @Trangthai, 
-                        @id_Nhanvienget, @Hoten_Nhanvienget, @NamNhapvien, @id_Tiepnhan, @id_KhoaChuyenden, @KhoaChuyenden, @Ngaygio_Chuyen, @Giochuyenmo, 
-                        @Xutri, @Hientai, @Bacsi_Truc, @YeucauThuho
-                    )";
-                await connection.ExecuteAsync(sqlInsertTaiKhoa, data.BenhNhanTaiKhoa, transaction);
-
-                // BƯỚC 6: INSERT BỆNH ÁN NGOẠI TRÚ
-                if (!string.IsNullOrEmpty(data.BenhAnNgoaiTru.id_Benhnhan))
-                {
-                    onProgress?.Invoke(">> Đang cập nhật Bệnh án Ngoại trú [BV_BenhAn_Ngoaitru]...");
-                    data.BenhAnNgoaiTru.id_Tiepnhan = newTiepNhanId;
-
-                    if (data.BenhAnNgoaiTru.Ngaygio is DateTime dtNgoaitru)
-                        data.BenhAnNgoaiTru.Ngaygiokhamdaydu = $"Khám lúc {dtNgoaitru.Hour} giờ {dtNgoaitru.Minute} phút, ngày {dtNgoaitru:dd} tháng {dtNgoaitru:MM} năm {dtNgoaitru:yyyy}";
-
-                    string sqlInsertBaNgoaitru = @"
-                        INSERT INTO BV_BenhAn_Ngoaitru (
-                            STT_Sokhambenh, id_Benhan_Phanloai_Khambenh, Namluutru, id_Hosonoitru, id_Benhnhan, id_Tiepnhan, id_DMDoituong, id_Bacsi, Hoten_Bacsi, 
-                            Ngaygio, Ngaygiokhamdaydu, id_DuyetBHYT, id_DMPhongkham, Ten_Khoaphong, Quatrinhbenhly, Tiensubenh_Banthan, Tiensubenh_Giadinh, Cacbophan, 
-                            Lydovaovien, KQ_Canlamsang, id_ICD_Chandoan, Chandoan, Denghi, Xutri, Ngaytaikham, Dientienbenh, Toanthan, MasoChungchi, dmdc_Id_Khoa, 
-                            dmdc_Ten_Khoa, id_Lanmangthai, Chidinhdichvu, Chidinhdieutri, Toathuoc, Ketluan, id_Benhnhanphongkham, Dieutri_Tungay, Dieutri_Denngay, 
-                            Phuongphap_Dieutri, Tinhtrang_Ravien, Loai_BenhAn, Phanloai_Capcuu, Phanloai_Ravien, Huongdieutri, QuenSo, Danhgia_tenga, Benh_phuctap, 
-                            Danhgia_tutu, id_nguoilap, ten_nguoilap, duyetphieu, ngayduyet, id_BA_Phuctap, chiphi_taikham
-                        ) VALUES (
-                            @STT_Sokhambenh, @id_Benhan_Phanloai_Khambenh, @Namluutru, @id_Hosonoitru, @id_Benhnhan, @id_Tiepnhan, @id_DMDoituong, @id_Bacsi, @Hoten_Bacsi, 
-                            @Ngaygio, @Ngaygiokhamdaydu, @id_DuyetBHYT, @id_DMPhongkham, @Ten_Khoaphong, @Quatrinhbenhly, @Tiensubenh_Banthan, @Tiensubenh_Giadinh, @Cacbophan, 
-                            @Lydovaovien, @KQ_Canlamsang, @id_ICD_Chandoan, @Chandoan, @Denghi, @Xutri, @Ngaytaikham, @Dientienbenh, @Toanthan, @MasoChungchi, @dmdc_Id_Khoa, 
-                            @dmdc_Ten_Khoa, @id_Lanmangthai, @Chidinhdichvu, @Chidinhdieutri, @Toathuoc, @Ketluan, @id_Benhnhanphongkham, @Dieutri_Tungay, @Dieutri_Denngay, 
-                            @Phuongphap_Dieutri, @Tinhtrang_Ravien, @Loai_BenhAn, @Phanloai_Capcuu, @Phanloai_Ravien, @Huongdieutri, @QuenSo, @Danhgia_tenga, @Benh_phuctap, 
-                            @Danhgia_tutu, @id_nguoilap, @ten_nguoilap, @duyetphieu, @ngayduyet, @id_BA_Phuctap, @chiphi_taikham
-                        )";
-                    await connection.ExecuteAsync(sqlInsertBaNgoaitru, data.BenhAnNgoaiTru, transaction);
-                }
-
-                // BƯỚC 7: INSERT HỒ SƠ NỘI TRÚ 
-                int newHoSoNoiTruId = 0;
-                if (!string.IsNullOrEmpty(data.HoSoNoiTru.id_Benhnhan))
-                {
-                    onProgress?.Invoke(">> Đang cập nhật Hồ sơ nội trú [BV_Hosonoitru]...");
-                    data.HoSoNoiTru.id_Tiepnhan = newTiepNhanId;
-                    data.HoSoNoiTru.id_Phieuchidinhvaovien = newPhieuId;
-
-                    if (data.HoSoNoiTru.Ngaygio is DateTime dtHsnt)
-                        data.HoSoNoiTru.Ngaygiodaydu = $"Vào lúc {dtHsnt.Hour} giờ {dtHsnt.Minute} phút, ngày {dtHsnt:dd} tháng {dtHsnt:MM} năm {dtHsnt:yyyy}";
-
-                    if (data.HoSoNoiTru.Vaovien_Ngaygiovaovien is DateTime dtVaovien)
-                        data.HoSoNoiTru.Vaovien_Ngaygiovaoviendaydu = $"Vào lúc {dtVaovien.Hour} giờ {dtVaovien.Minute} phút, ngày {dtVaovien:dd} tháng {dtVaovien:MM} năm {dtVaovien:yyyy}";
-
-                    if (data.HoSoNoiTru.Vaokhoa_Ngaygiovaokhoa is DateTime dtVaokhoa)
-                        data.HoSoNoiTru.Vaokhoa_Ngaygiovaokhoadaydu = $"Vào lúc {dtVaokhoa.Hour} giờ {dtVaokhoa.Minute} phút, ngày {dtVaokhoa:dd} tháng {dtVaokhoa:MM} năm {dtVaokhoa:yyyy}";
-
-                    string sqlInsertHoSoNoiTru = @"
-                        INSERT INTO BV_Hosonoitru (
-                            id_Phieuchidinhvaovien, Soluutru, Sonhapvien, Namluutru, Mayte, id_Tiepnhan, id_Benhan_Phanloai, Ten_PhanloaiBA, id_Benhnhan, Hoten, Ngaythangnamsinh, Namsinh, Tuoi, Gioitinh, Dienthoaididong, id_DMQuoctich, Quoctich, id_DMNghenghiep, Nghenghiep, id_DMDantoc, Dantoc, Tamtru_diachi, Tamtru_xaphuong, Tamtru_idXaphuong, Tamtru_quanhuyen, Tamtru_idQuanhuyen, Tamtru_tinhthanh, Tamtru_idTinhthanh, Noilamviec, id_DMDoituong, Doituong, id_DuyetBHYT, SotheBHYT, DuyetBHYT, NgayhethanBHYT, DiachiBHYT, Lienhe_hoten, Lienhe_diachi, Lienhe_sodienthoai, id_Bacsi_Lambenhan, Hoten_Bacsi_Lambenhan, id_Nhanvien, Hoten_Nhanvien, id_DMPhongkham, Ten_Phongkham, Ngaygio, Ngaygiodaydu, Vaovien_Ngaygiovaovien, Vaovien_Ngaygiovaoviendaydu, Tructiepvao, Noigioithieu, Vaoviendobenhnaylanthu, Vaokhoa, Vaokhoa_idKhoaphong, Vaokhoa_Ngaygiovaokhoa, Vaokhoa_Ngaygiovaokhoadaydu, Vaokhoa_Songaydieutri, Chuyenden, Chuyenvien, Ravien_Ngaygioravien, Ravien_Ngaygioraviendaydu, Ravien_Phanloai, Tongsongaydieutri, Chandoan_khivaokhoadieutri, ICD_Chandoan_khivaokhoadieutri, Chandoan_Lucvaokhoa_Lydo, Chandoan_Lucvaokhoa_Phanloai, ICD_Chandoannoichuyenden, Chandoannoichuyenden, ICD_ChandoanKKB_CC, ChandoanKKB_CC, Chandoan_Lucvaode, ICD_Chandoan_Lucvaode, Chandoan_phauthuatsausinh, Chandoan_thuthuatsausinh, Chandoan_taibien, Chandoan_bienchung, Chandoan_Ravien_Benhchinh, ICD_Chandoan_Ravien_Benhchinh, Chandoan_Ravien_Benhkemtheo, ICD_Chandoan_Ravien_Benhkemtheo, Ngayde_Mode, Ngoithai, Cachthucde, Cachthucde_Bienchung, Cachthucde_Kiemsoattucung, Cachthucde_Taibien, Cachthucde_TB_BC_Dogayme, Cachthucde_TB_BC_Dokhac, Cachthucde_TB_BC_Donhiemkhuan, Cachthucde_TB_BC_Dophauthuat, Tinhhinhphauthuat, Chandoan_Sauphauthuat, ICD_Chandoan_Sauphauthuat, Chandoan_Truocphauthuat, ICD_Chandoan_Truocphauthuat, Phuongphapphauthuat, Tongsongaydieutri_Sauphauthuat, Tongsolanphauthuat, Ketquadieutri, Giaiphaubenh, Tinhhinhtuvong_Ngay, Tinhhinhtuvong_phanloai, Tinhhinhtuvong_Lydo, Tinhhinhtuvong_Trong24giovaovien, Tinhhinhtuvong_Ngoai24giovaovien, Tinhhinhtuvong_Sau24giovaovien, Nguyennhanchinhtuvong, ICD_Nguyennhanchinhtuvong, Khamnghiemtuthi, ICD_Chandoangiaiphaututhi, Chandoangiaiphaututhi, Khivaokhoadieutri_TB_BC_Dogayme, Khivaokhoadieutri_TB_BC_Dokhac, Khivaokhoadieutri_TB_BC_Donhiemkhuan, Khivaokhoadieutri_TB_BC_Dophauthuat, Xuatvien, Ten_Khoahienhanh, id_Khoahienhanh, id_Giuongbenh, Tengiuongbenh, Dathanhtoanvienphi, id_Toaxuatvien, id_Taikham, Ngayhentaikham, Hosophu, Id_Me, Cohosophu, id_Khoaxuatvien, Tenkhoaxuatvien, KhongsudungDV, dmdc_Id_Khoa, Cannang, KhoaXuly, id_NVKhoaXuly, Danhan_HSBA, Thoigiannhan_HSBA
-                        ) VALUES (
-                            @id_Phieuchidinhvaovien, @Soluutru, @Sonhapvien, @Namluutru, @Mayte, @id_Tiepnhan, @id_Benhan_Phanloai, @Ten_PhanloaiBA, @id_Benhnhan, @Hoten, @Ngaythangnamsinh, @Namsinh, @Tuoi, @Gioitinh, @Dienthoaididong, @id_DMQuoctich, @Quoctich, @id_DMNghenghiep, @Nghenghiep, @id_DMDantoc, @Dantoc, @Tamtru_diachi, @Tamtru_xaphuong, @Tamtru_idXaphuong, @Tamtru_quanhuyen, @Tamtru_idQuanhuyen, @Tamtru_tinhthanh, @Tamtru_idTinhthanh, @Noilamviec, @id_DMDoituong, @Doituong, @id_DuyetBHYT, @SotheBHYT, @DuyetBHYT, @NgayhethanBHYT, @DiachiBHYT, @Lienhe_hoten, @Lienhe_diachi, @Lienhe_sodienthoai, @id_Bacsi_Lambenhan, @Hoten_Bacsi_Lambenhan, @id_Nhanvien, @Hoten_Nhanvien, @id_DMPhongkham, @Ten_Phongkham, @Ngaygio, @Ngaygiodaydu, @Vaovien_Ngaygiovaovien, @Vaovien_Ngaygiovaoviendaydu, @Tructiepvao, @Noigioithieu, @Vaoviendobenhnaylanthu, @Vaokhoa, @Vaokhoa_idKhoaphong, @Vaokhoa_Ngaygiovaokhoa, @Vaokhoa_Ngaygiovaokhoadaydu, @Vaokhoa_Songaydieutri, @Chuyenden, @Chuyenvien, @Ravien_Ngaygioravien, @Ravien_Ngaygioraviendaydu, @Ravien_Phanloai, @Tongsongaydieutri, @Chandoan_khivaokhoadieutri, @ICD_Chandoan_khivaokhoadieutri, @Chandoan_Lucvaokhoa_Lydo, @Chandoan_Lucvaokhoa_Phanloai, @ICD_Chandoannoichuyenden, @Chandoannoichuyenden, @ICD_ChandoanKKB_CC, @ChandoanKKB_CC, @Chandoan_Lucvaode, @ICD_Chandoan_Lucvaode, @Chandoan_phauthuatsausinh, @Chandoan_thuthuatsausinh, @Chandoan_taibien, @Chandoan_bienchung, @Chandoan_Ravien_Benhchinh, @ICD_Chandoan_Ravien_Benhchinh, @Chandoan_Ravien_Benhkemtheo, @ICD_Chandoan_Ravien_Benhkemtheo, @Ngayde_Mode, @Ngoithai, @Cachthucde, @Cachthucde_Bienchung, @Cachthucde_Kiemsoattucung, @Cachthucde_Taibien, @Cachthucde_TB_BC_Dogayme, @Cachthucde_TB_BC_Dokhac, @Cachthucde_TB_BC_Donhiemkhuan, @Cachthucde_TB_BC_Dophauthuat, @Tinhhinhphauthuat, @Chandoan_Sauphauthuat, @ICD_Chandoan_Sauphauthuat, @Chandoan_Truocphauthuat, @ICD_Chandoan_Truocphauthuat, @Phuongphapphauthuat, @Tongsongaydieutri_Sauphauthuat, @Tongsolanphauthuat, @Ketquadieutri, @Giaiphaubenh, @Tinhhinhtuvong_Ngay, @Tinhhinhtuvong_phanloai, @Tinhhinhtuvong_Lydo, @Tinhhinhtuvong_Trong24giovaovien, @Tinhhinhtuvong_Ngoai24giovaovien, @Tinhhinhtuvong_Sau24giovaovien, @Nguyennhanchinhtuvong, @ICD_Nguyennhanchinhtuvong, @Khamnghiemtuthi, @ICD_Chandoangiaiphaututhi, @Chandoangiaiphaututhi, @Khivaokhoadieutri_TB_BC_Dogayme, @Khivaokhoadieutri_TB_BC_Dokhac, @Khivaokhoadieutri_TB_BC_Donhiemkhuan, @Khivaokhoadieutri_TB_BC_Dophauthuat, @Xuatvien, @Ten_Khoahienhanh, @id_Khoahienhanh, @id_Giuongbenh, @Tengiuongbenh, @Dathanhtoanvienphi, @id_Toaxuatvien, @id_Taikham, @Ngayhentaikham, @Hosophu, @Id_Me, @Cohosophu, @id_Khoaxuatvien, @Tenkhoaxuatvien, @KhongsudungDV, @dmdc_Id_Khoa, @Cannang, @KhoaXuly, @id_NVKhoaXuly, @Danhan_HSBA, @Thoigiannhan_HSBA
-                        );
-                        SELECT CAST(SCOPE_IDENTITY() as int);";
-
-                    newHoSoNoiTruId = await connection.QuerySingleAsync<int>(sqlInsertHoSoNoiTru, data.HoSoNoiTru, transaction);
-                    onProgress?.Invoke($"   -> Tạo thành công ID Hồ sơ nội trú mới: {newHoSoNoiTruId}");
+                        hoSoNoiTruId = await connection.QuerySingleAsync<int>(sqlInsertHoSoNoiTru, data.HoSoNoiTru, transaction);
+                    }
                 }
 
                 // =========================================================================
                 // BƯỚC 8: CẬP NHẬT NGƯỢC ID_HOSONOITRU CHO TIẾP NHẬN & BỆNH ÁN NGOẠI TRÚ
                 // =========================================================================
-                if (newHoSoNoiTruId > 0)
+                if (hoSoNoiTruId > 0)
                 {
-                    onProgress?.Invoke($">> Cập nhật ngược ID_Hosonoitru ({newHoSoNoiTruId}) cho bảng Tiếp nhận và Bệnh án ngoại trú...");
+                    onProgress?.Invoke($">> Cập nhật ngược ID_Hosonoitru ({hoSoNoiTruId}) cho bảng Tiếp nhận và Bệnh án...");
 
                     string sqlUpdateTiepNhan = "UPDATE BV_Tiepnhan SET id_Hosonoitru = @id_Hosonoitru WHERE id_Tiepnhan = @id_Tiepnhan;";
-                    await connection.ExecuteAsync(sqlUpdateTiepNhan, new { id_Hosonoitru = newHoSoNoiTruId, id_Tiepnhan = newTiepNhanId }, transaction);
+                    await connection.ExecuteAsync(sqlUpdateTiepNhan, new { id_Hosonoitru = hoSoNoiTruId, id_Tiepnhan = tiepNhanId }, transaction);
 
                     if (!string.IsNullOrEmpty(data.BenhAnNgoaiTru.id_Benhnhan))
                     {
                         string sqlUpdateBaNgoaiTru = "UPDATE BV_BenhAn_Ngoaitru SET id_Hosonoitru = @id_Hosonoitru WHERE id_Tiepnhan = @id_Tiepnhan;";
-                        await connection.ExecuteAsync(sqlUpdateBaNgoaiTru, new { id_Hosonoitru = newHoSoNoiTruId, id_Tiepnhan = newTiepNhanId }, transaction);
+                        await connection.ExecuteAsync(sqlUpdateBaNgoaiTru, new { id_Hosonoitru = hoSoNoiTruId, id_Tiepnhan = tiepNhanId }, transaction);
                     }
                 }
 
                 // =========================================================================
-                // BƯỚC 9: INSERT TRẺ SƠ SINH (BV_Tresosinh) - CÓ KIỂM TRA ĐIỀU KIỆN
+                // BƯỚC 9: KIỂM TRA & INSERT TRẺ SƠ SINH
                 // =========================================================================
-                // CHỈ khi câu Query số 6 trả về dữ liệu (DanhSachTreSoSinh.Any() == true), đoạn code dưới đây mới chạy
                 if (data.DanhSachTreSoSinh != null && data.DanhSachTreSoSinh.Count != 0)
                 {
-                    onProgress?.Invoke($">> Đang cập nhật {data.DanhSachTreSoSinh.Count} thông tin Trẻ sơ sinh vào hệ thống...");
-                    string sqlInsertTreSoSinh = @"
-                        INSERT INTO BV_Tresosinh (
-                            id_Hosonoitru_Me, Sonhapvien_Me, Stt_Tatcatre, Hotenbe, Gioitinh, Tinhtrang, Ditat, Cannang, Cao, Vongdau, 
-                            Deluc_Gio, Deluc_Phut, Deluc_Ngay, Cohaumon, Cuthetatbamsinh, Tinhtrangtresosinhsaukhide, Xulyvaketqua, 
-                            Apgar1phut, Apgar5phut, Apgar10phut, Vevoime, Ngaygio, Magiaychungsinh, Conhananhbe, id_Yta, Hoten_Yta, 
-                            id_BSTruc, Hoten_BSTruc, id_Benhnhan_be, Quyenso, Hotenme_NND, Namsinh_Me, Diachithuongtru, SoCMND_Hochieu, 
-                            Dantoc, Solansinh, Soconhiensong, Socontronglansinhnay, Dudinhdattenbe, Id_Nhanviendode, Hoten_Nhanviendode, 
-                            Nam, Machucdanh, Ngaycap_SoCMND_Hochieu, Noicap_SoCMND_Hochieu, Ghichu, id_Benhnhan_Me, CachSanh, id_TheodoiTuoithai, 
-                            Dagui_SMS, Thai_Tuan, Thai_Ngay, Hoten_Cha, MasoBHXH_Me, Thutruong_Donvi, id_Tiepnhan, NgayGioIn, Quatrinhmangthai, 
-                            Ma_The_Tam, ChandoanVV, LydoVV, CaplaiGCS, TinhtrangSK
-                        ) VALUES (
-                            @id_Hosonoitru_Me, @Sonhapvien_Me, @Stt_Tatcatre, @Hotenbe, @Gioitinh, @Tinhtrang, @Ditat, @Cannang, @Cao, @Vongdau, 
-                            @Deluc_Gio, @Deluc_Phut, @Deluc_Ngay, @Cohaumon, @Cuthetatbamsinh, @Tinhtrangtresosinhsaukhide, @Xulyvaketqua, 
-                            @Apgar1phut, @Apgar5phut, @Apgar10phut, @Vevoime, @Ngaygio, @Magiaychungsinh, @Conhananhbe, @id_Yta, @Hoten_Yta, 
-                            @id_BSTruc, @Hoten_BSTruc, @id_Benhnhan_be, @Quyenso, @Hotenme_NND, @Namsinh_Me, @Diachithuongtru, @SoCMND_Hochieu, 
-                            @Dantoc, @Solansinh, @Soconhiensong, @Socontronglansinhnay, @Dudinhdattenbe, @Id_Nhanviendode, @Hoten_Nhanviendode, 
-                            @Nam, @Machucdanh, @Ngaycap_SoCMND_Hochieu, @Noicap_SoCMND_Hochieu, @Ghichu, @id_Benhnhan_Me, @CachSanh, @id_TheodoiTuoithai, 
-                            @Dagui_SMS, @Thai_Tuan, @Thai_Ngay, @Hoten_Cha, @MasoBHXH_Me, @Thutruong_Donvi, @id_Tiepnhan, @NgayGioIn, @Quatrinhmangthai, 
-                            @Ma_The_Tam, @ChandoanVV, @LydoVV, @CaplaiGCS, @TinhtrangSK
-                        )";
+                    onProgress?.Invoke($">> Kiểm tra Trẻ sơ sinh [BV_Tresosinh]...");
+                    int existsTre = await connection.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM BV_Tresosinh WHERE id_Tiepnhan = @id", new { id = tiepNhanId }, transaction);
 
-                    foreach (var be in data.DanhSachTreSoSinh)
+                    if (existsTre == 0)
                     {
-                        // Truyền mã tiếp nhận và hồ sơ nội trú của mẹ qua cho trẻ sơ sinh
-                        be.id_Tiepnhan = newTiepNhanId;
-                        be.id_Hosonoitru_Me = newHoSoNoiTruId > 0 ? newHoSoNoiTruId : null;
-                        be.Sonhapvien_Me = data.TiepNhan.Sonhapvien;
-                        be.id_Benhnhan_Me = data.TiepNhan.id_Benhnhan;
+                        string sqlInsertTreSoSinh = @"
+                    INSERT INTO BV_Tresosinh (
+                        id_Hosonoitru_Me, Sonhapvien_Me, Stt_Tatcatre, Hotenbe, Gioitinh, Tinhtrang, Ditat, Cannang, Cao, Vongdau, 
+                        Deluc_Gio, Deluc_Phut, Deluc_Ngay, Cohaumon, Cuthetatbamsinh, Tinhtrangtresosinhsaukhide, Xulyvaketqua, 
+                        Apgar1phut, Apgar5phut, Apgar10phut, Vevoime, Ngaygio, Magiaychungsinh, Conhananhbe, id_Yta, Hoten_Yta, 
+                        id_BSTruc, Hoten_BSTruc, id_Benhnhan_be, Quyenso, Hotenme_NND, Namsinh_Me, Diachithuongtru, SoCMND_Hochieu, 
+                        Dantoc, Solansinh, Soconhiensong, Socontronglansinhnay, Dudinhdattenbe, Id_Nhanviendode, Hoten_Nhanviendode, 
+                        Nam, Machucdanh, Ngaycap_SoCMND_Hochieu, Noicap_SoCMND_Hochieu, Ghichu, id_Benhnhan_Me, CachSanh, id_TheodoiTuoithai, 
+                        Dagui_SMS, Thai_Tuan, Thai_Ngay, Hoten_Cha, MasoBHXH_Me, Thutruong_Donvi, id_Tiepnhan, NgayGioIn, Quatrinhmangthai, 
+                        Ma_The_Tam, ChandoanVV, LydoVV, CaplaiGCS, TinhtrangSK
+                    ) VALUES (
+                        @id_Hosonoitru_Me, @Sonhapvien_Me, @Stt_Tatcatre, @Hotenbe, @Gioitinh, @Tinhtrang, @Ditat, @Cannang, @Cao, @Vongdau, 
+                        @Deluc_Gio, @Deluc_Phut, @Deluc_Ngay, @Cohaumon, @Cuthetatbamsinh, @Tinhtrangtresosinhsaukhide, @Xulyvaketqua, 
+                        @Apgar1phut, @Apgar5phut, @Apgar10phut, @Vevoime, @Ngaygio, @Magiaychungsinh, @Conhananhbe, @id_Yta, @Hoten_Yta, 
+                        @id_BSTruc, @Hoten_BSTruc, @id_Benhnhan_be, @Quyenso, @Hotenme_NND, @Namsinh_Me, @Diachithuongtru, @SoCMND_Hochieu, 
+                        @Dantoc, @Solansinh, @Soconhiensong, @Socontronglansinhnay, @Dudinhdattenbe, @Id_Nhanviendode, @Hoten_Nhanviendode, 
+                        @Nam, @Machucdanh, @Ngaycap_SoCMND_Hochieu, @Noicap_SoCMND_Hochieu, @Ghichu, @id_Benhnhan_Me, @CachSanh, @id_TheodoiTuoithai, 
+                        @Dagui_SMS, @Thai_Tuan, @Thai_Ngay, @Hoten_Cha, @MasoBHXH_Me, @Thutruong_Donvi, @id_Tiepnhan, @NgayGioIn, @Quatrinhmangthai, 
+                        @Ma_The_Tam, @ChandoanVV, @LydoVV, @CaplaiGCS, @TinhtrangSK
+                    )";
 
-                        await connection.ExecuteAsync(sqlInsertTreSoSinh, be, transaction);
+                        foreach (var be in data.DanhSachTreSoSinh)
+                        {
+                            be.id_Tiepnhan = tiepNhanId;
+                            be.id_Hosonoitru_Me = hoSoNoiTruId > 0 ? hoSoNoiTruId : null;
+                            be.Sonhapvien_Me = data.TiepNhan.Sonhapvien;
+                            be.id_Benhnhan_Me = data.TiepNhan.id_Benhnhan;
+
+                            await connection.ExecuteAsync(sqlInsertTreSoSinh, be, transaction);
+                        }
                     }
+                    else { onProgress?.Invoke("   -> Dữ liệu đã tồn tại, bỏ qua."); }
                 }
 
-                onProgress?.Invoke("✔ Mọi bảng đã được xử lý. Đang hoàn tất lưu trữ (Commit)...");
+                onProgress?.Invoke("✔ Xử lý hoàn tất. Đang lưu trữ (Commit)...");
                 transaction.Commit();
 
                 return new MigrationResult
                 {
                     IsSuccess = true,
-                    Message = $"Đồng bộ thành công! Lượt tiếp nhận: {newTiepNhanId} & Hồ sơ nội trú: {newHoSoNoiTruId}."
+                    Message = $"Đồng bộ thành công! Mã Tiếp nhận: {tiepNhanId} & Hồ sơ nội trú: {hoSoNoiTruId}."
                 };
             }
             catch (Exception ex)
             {
                 onProgress?.Invoke($"✖ PHÁT HIỆN LỖI: {ex.Message}");
-                onProgress?.Invoke("↺ Đang hủy bỏ tất cả thay đổi (Rollback) để bảo vệ dữ liệu...");
+                onProgress?.Invoke("↺ Đang hủy bỏ tất cả thay đổi (Rollback)...");
                 transaction.Rollback();
                 return new MigrationResult
                 {
